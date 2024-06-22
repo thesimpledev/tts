@@ -26,13 +26,15 @@ jobs:
           mkdir -p bin
           cwd=${{ github.workspace }}
           for dir in ./*; do
-            cd $dir
-            app=$(basename $dir)
-            # Build for Windows
-            GOOS=windows GOARCH=amd64 go build -o $cwd/bin/${app}-windows-amd64.exe main.go
-            # Build for Linux
-            GOOS=linux GOARCH=amd64 go build -o $cwd/bin/${app}-linux-amd64 main.go
-            cd $cwd
+            if [ -f "$dir/main.go" ]; then
+              cd $dir
+              app=$(basename $dir)
+              # Build for Windows
+              GOOS=windows GOARCH=amd64 go build -o $cwd/bin/${app}-windows-amd64.exe main.go
+              # Build for Linux
+              GOOS=linux GOARCH=amd64 go build -o $cwd/bin/${app}-linux-amd64 main.go
+              cd $cwd
+            fi
           done
 
       - name: Archive build output for Windows
