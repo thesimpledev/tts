@@ -12,6 +12,8 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      GITHUB_TOKEN: ${{ secrets.PAT }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -62,6 +64,8 @@ jobs:
   release:
     needs: build
     runs-on: ubuntu-latest
+    env:
+      GITHUB_TOKEN: ${{ secrets.PAT }}
     steps:
       - name: Download Windows artifact
         uses: actions/download-artifact@v3
