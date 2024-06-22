@@ -19,19 +19,12 @@ jobs:
       - name: Display Environment Information
         run: go env
 
-      - name: List Contents for Debugging
-        run: |
-          echo "Root Directory Contents:"
-          ls -la
-          echo "Source Directory Contents:"
-          ls -la src
-
       - name: Install dependencies and run tests
         run: |
           mkdir -p coverage
           cwd=${{ github.workspace }}
 
-          for dir in src/*; do
+          for dir in ./*; do
             if [ -d "$dir" ]; then
               echo "Processing directory: $dir"
               cd $dir
