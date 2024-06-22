@@ -1,0 +1,99 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: 1.22.4
+
+      - name: Build Application
+        run: |
+          mkdir -p bin
+          cwd=${{ github.workspace }}
+          for dir in src/*; do
+            cd $dir
+            app=$(basename $dir)
+            # Build for Windows
+            GOOS=windows GOARCH=amd64 go build -o $cwd/bin/${app}-windows-amd64.exe main.go
+            # Build for Linux
+            GOOS=linux GOARCH=amd64 go build -o $cwd/bin/${app}-linux-amd64 main.go
+            cd $cwd
+          done
+
+      - name: Archive build output for Windows
+        run: |
+          cd bin
+          zip -r cli-tools-windows-amd64.zip *-windows-amd64.exe
+
+      - name: Archive build output for Linux
+        run: |
+          cd bin
+          zip -r cli-tools-linux-amd64.zip *-linux-amd64
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: cli-tools-windows-amd64
+          path: bin/cli-tools-windows-amd64.zip
+
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: cli-tools-linux-amd64
+          path: bin/cli-tools-linux-amd64.zip
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v3
+        with:
+          name: cli-tools-windows-amd64
+          path: ./bin
+
+      - name: Download Linux artifact
+        uses: actions/download-artifact@v3
+        with:
+          name: cli-tools-linux-amd64
+          path: ./bin
+
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        with:
+          tag_name: ${{ github.ref_name }}
+          release_name: Release ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+
+      - name: Upload Release Asset for Windows
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./bin/cli-tools-windows-amd64.zip
+          asset_name: cli-tools-windows-amd64.zip
+          asset_content_type: application/zip
+
+      - name: Upload Release Asset for Linux
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./bin/cli-tools-linux-amd64.zip
+          asset_name: cli-tools-linux-amd64.zip
+          asset_content_type: application/zip
