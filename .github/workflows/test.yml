@@ -67,15 +67,6 @@ jobs:
 
           mv $TEMP_COVER_OUT coverage/cover.out
 
-      - name: Print Coverage Directory
-        run: ls -la coverage
-
-      - name: Print Individual Coverage Files
-        run: cat coverage/*.out
-
-      - name: Print Merged Coverage File
-        run: cat coverage/cover.out
-
       - name: Upload Coverage to Coveralls
         uses: coverallsapp/github-action@v2
         with:
