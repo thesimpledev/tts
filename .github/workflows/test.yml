@@ -1,0 +1,83 @@
+name: Test
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.22.4'
+
+      - name: Display Environment Information
+        run: go env
+
+      - name: List Contents for Debugging
+        run: |
+          echo "Root Directory Contents:"
+          ls -la
+          echo "Source Directory Contents:"
+          ls -la src
+
+      - name: Install dependencies and run tests
+        run: |
+          mkdir -p coverage
+          cwd=${{ github.workspace }}
+
+          for dir in src/*; do
+            if [ -d "$dir" ]; then
+              echo "Processing directory: $dir"
+              cd $dir
+
+              if [ -f "go.mod" ]; then
+                go mod tidy
+                go mod download
+              fi
+
+              if ls *_test.go 1> /dev/null 2>&1; then
+                go test -v -covermode=atomic -coverprofile=$cwd/coverage/$(basename $dir).out ./...
+              else
+                echo "No test files found in $dir"
+              fi
+
+              cd $cwd
+            fi
+          done
+
+      - name: Merge coverage files
+        run: |
+          echo "mode: set" > coverage/cover.out
+          find coverage -name '*.out' | grep -v "cover.out" | xargs grep -h -v "^mode:" >> coverage/cover.out
+
+      - name: Adjust coverage paths
+        run: |
+          # Create a temp file for adjusted output
+          TEMP_COVER_OUT=$(mktemp)
+          echo "mode: set" > $TEMP_COVER_OUT
+
+          # Adjust paths to be relative in the coverage file 
+          sed 's#$(pwd)/##g' coverage/cover.out | grep -v "^mode:" >> $TEMP_COVER_OUT
+
+          mv $TEMP_COVER_OUT coverage/cover.out
+
+      - name: Print Coverage Directory
+        run: ls -la coverage
+
+      - name: Print Individual Coverage Files
+        run: cat coverage/*.out
+
+      - name: Print Merged Coverage File
+        run: cat coverage/cover.out
+
+      - name: Upload Coverage to Coveralls
+        uses: coverallsapp/github-action@v2
+        with:
+          github-token: ${{ secrets.COVERALLS_REPO_TOKEN }}
+          path-to-lcov: coverage/cover.out
