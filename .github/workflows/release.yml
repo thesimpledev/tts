@@ -25,7 +25,7 @@ jobs:
         run: |
           mkdir -p bin
           cwd=${{ github.workspace }}
-          for dir in src/*; do
+          for dir in ./*; do
             cd $dir
             app=$(basename $dir)
             # Build for Windows
