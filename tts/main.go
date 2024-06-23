@@ -284,7 +284,7 @@ func printHelp() {
 	-m model defaults to tts-1-hd
 		Model options are: tts-1 and tts-1-hd
 
-	-b laces buffer words at start and end of text to help with abrupt 
+	-b places buffer words at start and end of text to help with abrupt 
 		starts and ends
 
 
