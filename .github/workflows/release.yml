@@ -41,13 +41,17 @@ jobs:
 
       - name: Archive build output for Windows
         run: |
-          cd bin
-          zip -r cli-tools-windows-amd64.zip *.exe
+          mkdir -p artifacts/windows
+          find bin -name "*.exe" -exec mv {} artifacts/windows/ \;
+          cd artifacts/windows
+          zip -r ../../bin/cli-tools-windows-amd64.zip *
 
       - name: Archive build output for Linux
         run: |
-          cd bin
-          tar -czvf cli-tools-linux-amd64.tar.gz *
+          mkdir -p artifacts/linux
+          find bin -type f ! -name "*.exe" ! -name "*.zip" -exec mv {} artifacts/linux/ \;
+          cd artifacts/linux
+          tar -czvf ../../bin/cli-tools-linux-amd64.tar.gz *
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v3
