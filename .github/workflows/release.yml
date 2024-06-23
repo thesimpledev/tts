@@ -47,7 +47,7 @@ jobs:
       - name: Archive build output for Linux
         run: |
           cd bin
-          zip -r cli-tools-linux-amd64.zip *-linux-amd64
+          tar -czvf cli-tools-linux-amd64.tar.gz *-linux-amd64
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v3
@@ -59,7 +59,7 @@ jobs:
         uses: actions/upload-artifact@v3
         with:
           name: cli-tools-linux-amd64
-          path: bin/cli-tools-linux-amd64.zip
+          path: bin/cli-tools-linux-amd64.tar.gz
 
   release:
     needs: build
@@ -100,6 +100,6 @@ jobs:
         uses: actions/upload-release-asset@v1
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./bin/cli-tools-linux-amd64.zip
-          asset_name: cli-tools-linux-amd64.zip
-          asset_content_type: application/zip
+          asset_path: ./bin/cli-tools-linux-amd64.tar.gz
+          asset_name: cli-tools-linux-amd64.tar.gz
+          asset_content_type: application/gzip
