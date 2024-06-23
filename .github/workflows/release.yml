@@ -32,9 +32,9 @@ jobs:
               cd $dir
               app=$(basename $dir)
               # Build for Windows
-              GOOS=windows GOARCH=amd64 go build -o $cwd/bin/${app}-windows-amd64.exe main.go
+              GOOS=windows GOARCH=amd64 go build -o $cwd/bin/${app}.exe main.go
               # Build for Linux
-              GOOS=linux GOARCH=amd64 go build -o $cwd/bin/${app}-linux-amd64 main.go
+              GOOS=linux GOARCH=amd64 go build -o $cwd/bin/${app} main.go
               cd $cwd
             fi
           done
@@ -42,12 +42,12 @@ jobs:
       - name: Archive build output for Windows
         run: |
           cd bin
-          zip -r cli-tools-windows-amd64.zip *-windows-amd64.exe
+          zip -r cli-tools-windows-amd64.zip *.exe
 
       - name: Archive build output for Linux
         run: |
           cd bin
-          tar -czvf cli-tools-linux-amd64.tar.gz *-linux-amd64
+          tar -czvf cli-tools-linux-amd64.tar.gz *
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v3
