@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/StevenDStanton/cli-tools/common"
@@ -43,15 +44,16 @@ var (
 )
 
 var (
-	inputFile     = flag.String("f", "", "Input Markdown file")
-	outputFile    = flag.String("o", "", "Output audio file")
-	voiceOption   = flag.String("v", defaultVoice, "Voice Selection")
-	modelOption   = flag.String("m", defaultModel, "Model Selection")
-	formatOption  = flag.String("fmt", defaultFormat, "Select output format")
-	speedOption   = flag.String("s", defaultSpeed, "Set audio speed")
-	configureMode = flag.Bool("configure", false, "Enter Configuration Mode")
-	helpFlag      = flag.Bool("help", false, "Displays Help Menu")
-	versionFlag   = flag.Bool("version", false, "Displays version information")
+	inputFile      = flag.String("f", "", "Input Markdown file")
+	outputFile     = flag.String("o", "", "Output audio file")
+	voiceOption    = flag.String("v", defaultVoice, "Voice Selection")
+	modelOption    = flag.String("m", defaultModel, "Model Selection")
+	formatOption   = flag.String("fmt", defaultFormat, "Select output format")
+	speedOption    = flag.String("s", defaultSpeed, "Set audio speed")
+	configureMode  = flag.Bool("configure", false, "Enter Configuration Mode")
+	helpFlag       = flag.Bool("help", false, "Displays Help Menu")
+	versionFlag    = flag.Bool("version", false, "Displays version information")
+	bufferTextFlag = flag.Bool("b", false, "Places buffer words at start and end of text to help with abrupt starts and ends")
 )
 
 func init() {
@@ -78,17 +80,33 @@ func init() {
 }
 
 func main() {
-	inputContent := readFileData(*inputFile)
-
-	ttsRequest := TTSRequest{
-		Model:  *modelOption,
-		Voice:  *voiceOption,
-		Format: *formatOption,
-		Input:  inputContent,
-		Speed:  *speedOption,
+	chunks := readFileData(*inputFile)
+	if len(chunks) > 1 {
+		fmt.Printf("This will create %d files. Are you sure you wish to continue? (y/n): ", len(chunks))
+		var response string
+		fmt.Scanln(&response)
+		if strings.ToLower(response) != "y" {
+			fmt.Println("Operation cancelled.")
+			os.Exit(0)
+		}
 	}
 
-	tts(ttsRequest, *outputFile)
+	for i, chunk := range chunks {
+		var outputFileName string
+		if len(chunks) == 1 {
+			outputFileName = *outputFile
+		} else {
+			outputFileName = fmt.Sprintf("%s_%d.mp3", strings.TrimSuffix(*outputFile, filepath.Ext(*outputFile)), i+1)
+		}
+		ttsRequest := TTSRequest{
+			Model:  *modelOption,
+			Voice:  *voiceOption,
+			Format: *formatOption,
+			Input:  chunk,
+			Speed:  *speedOption,
+		}
+		tts(ttsRequest, outputFileName)
+	}
 }
 
 //This can be improved in the future to have a single config setup
@@ -162,13 +180,45 @@ func readConfig() {
 	}
 }
 
-func readFileData(inputFile string) string {
+func readFileData(inputFile string) []string {
 	inputContent, err := os.ReadFile(inputFile)
 	checkFatalErrorExists("Error: reading input file", err)
-	if utf8.RuneCount(inputContent) > 4096 {
-		log.Fatalln("Input cannot exceed 4096 characters")
+	startText := "Begin Text\n"
+	endText := "\nEnd Text"
+
+	chunkSize := 4096
+	if *bufferTextFlag {
+
+		startTextLen := utf8.RuneCountInString(startText)
+		endTextLen := utf8.RuneCountInString(endText)
+
+		chunkSize = chunkSize - startTextLen - endTextLen
 	}
-	return string(inputContent)
+
+	var chunks []string
+	inputString := string(inputContent)
+
+	for len(inputString) > 0 {
+		if utf8.RuneCountInString(inputString) <= chunkSize {
+			if *bufferTextFlag {
+				chunks = append(chunks, startText+inputString+endText)
+				break
+			}
+			chunks = append(chunks, inputString)
+			break
+		}
+		splitIndex := chunkSize
+		for ; splitIndex > 0 && !unicode.IsSpace(rune(inputString[splitIndex])); splitIndex-- {
+		}
+		if *bufferTextFlag {
+			chunks = append(chunks, startText+inputString[:splitIndex]+endText)
+		} else {
+			chunks = append(chunks, inputString[:splitIndex])
+		}
+		inputString = strings.TrimSpace(inputString[splitIndex:])
+	}
+
+	return chunks
 }
 
 func tts(ttsRequest TTSRequest, outputFile string) {
@@ -233,6 +283,9 @@ func printHelp() {
 
 	-m model defaults to tts-1-hd
 		Model options are: tts-1 and tts-1-hd
+
+	-b laces buffer words at start and end of text to help with abrupt 
+		starts and ends
 
 
 	-fmt output format defaults to mp3
