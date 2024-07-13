@@ -41,6 +41,7 @@ const (
 var (
 	configFilePath string
 	OPENAI_API_KEY string
+	rateLimiter    <-chan time.Time
 )
 
 var (
@@ -92,7 +93,9 @@ func main() {
 		}
 	}
 
-	rateLimiter := time.Tick(time.Minute / time.Duration(*rateLimit))
+	if *rateLimit > 0 {
+		rateLimiter = time.Tick(time.Minute / time.Duration(*rateLimit))
+	}
 
 	for i, chunk := range chunks {
 		var outputFileName string
