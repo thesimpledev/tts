@@ -275,34 +275,29 @@ func makeHttpRequest(req *http.Request, outputFile string) {
 }
 
 func printHelp() {
-	help := `Usage: tts [OPTION]
+	help := `Usage: tts [OPTIONS]
 
-	--configure          enter configuration prompt for API key
-	--help               displays help
-	--version            displays version information
+Process text files with OpenAI's Text To Speech API.
 
-	To use the program both of the below flags are require
-	-o output audio file
-	-f input text file
+Options:
+  -f FILE       Input Markdown file
+  -o FILE       Output audio file
+  -v VOICE      Voice selection (default: nova)
+                Options: alloy, echo, fable, onyx, nova, shimmer
+  -m MODEL      Model selection (default: tts-1-hd)
+                Options: tts-1, tts-1-hd
+  -fmt FORMAT   Output format (default: mp3)
+                Options: mp3, opus, aac, flac, wav, pcm
+  -s SPEED      Set audio speed (default: 1.0)
+                Range: 0.25 to 4.0
+  -b            Place buffer words at start and end of text
+  -r RATE       Rate limit for API calls per minute (default: unlimited)
+  --configure   Enter configuration mode for API key setup
+  --help        Display this help and exit
+  --version     Output version information and exit
 
-	Optional flags
-	-v voice defaults to nova. 
-		Voice options are: alloy, echo, fable, onyx, nova, and shimmer
-
-	-m model defaults to tts-1-hd
-		Model options are: tts-1 and tts-1-hd
-
-	-b places buffer words at start and end of text to help with abrupt 
-		starts and ends
-
-
-	-fmt output format defaults to mp3
-		Format options are: mp3, opus, aac, flac, wav, pcm
-	
-	-s speed defaults to 1
-		Speed options 0.25 to 4.0
-
-	-r rate limit. Number of requests that can be made per minute Default unlimited
-	`
+Example:
+  tts -f input.md -o output.mp3
+`
 	fmt.Println(help)
 }
