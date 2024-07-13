@@ -54,6 +54,7 @@ var (
 	helpFlag       = flag.Bool("help", false, "Displays Help Menu")
 	versionFlag    = flag.Bool("version", false, "Displays version information")
 	bufferTextFlag = flag.Bool("b", false, "Places buffer words at start and end of text to help with abrupt starts and ends")
+	rateLimit      = flag.Int("r", 0, "Rate limit for API calls per minute")
 )
 
 func init() {
@@ -91,6 +92,8 @@ func main() {
 		}
 	}
 
+	rateLimiter := time.Tick(time.Minute / time.Duration(*rateLimit))
+
 	for i, chunk := range chunks {
 		var outputFileName string
 		if len(chunks) == 1 {
@@ -105,6 +108,11 @@ func main() {
 			Input:  chunk,
 			Speed:  *speedOption,
 		}
+
+		if *rateLimit > 0 {
+			<-rateLimiter
+		}
+
 		tts(ttsRequest, outputFileName)
 	}
 }
@@ -293,6 +301,8 @@ func printHelp() {
 	
 	-s speed defaults to 1
 		Speed options 0.25 to 4.0
+
+	-r rate limit. Number of requests that can be made per minute Default unlimited
 	`
 	fmt.Println(help)
 }
