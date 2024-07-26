@@ -6,6 +6,10 @@ This project is a continuation of my previous [Linux Tools for Windows](https://
 
 - tts: Converts text files to speech using the OpenAI API.
 
+## To Do
+
+- [ ] tts add optional flag for break point between audio files in text.
+
 ### tts
 
 A simple CLI tool for converting text files to speech using the OpenAI API. The tool reads a text file (including Markdown), sends its content to the OpenAI API for text-to-speech conversion, and saves the generated audio file.
