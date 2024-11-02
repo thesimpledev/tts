@@ -28,6 +28,27 @@ type TTSRequest struct {
 	Speed  string `json:"speed"`
 }
 
+type Config struct {
+	OpenAIAPIKey string
+	rateLimiter  <-chan time.Time
+	configPath   string
+}
+
+type Flags struct {
+	InputFile      string
+	OutputFile     string
+	VoiceOption    string
+	ModelOption    string
+	FormatOption   string
+	SpeedOption    string
+	ConfigureMode  bool
+	HelpFlag       bool
+	VersionFlag    bool
+	BufferTextFlag bool
+	RateLimit      int
+	CombineFiles   bool
+}
+
 const (
 	CONFIG_FILE        = "tts.config"
 	CONFIG_DIR         = ".cli-tools"
@@ -41,52 +62,38 @@ const (
 )
 
 var (
-	configFilePath string
-	OPENAI_API_KEY string
-	rateLimiter    <-chan time.Time
+	multiFile = false
+	flags     Flags
 )
 
-var (
-	inputFile      = flag.String("f", "", "Input Markdown file")
-	outputFile     = flag.String("o", "", "Output audio file")
-	voiceOption    = flag.String("v", defaultVoice, "Voice Selection")
-	modelOption    = flag.String("m", defaultModel, "Model Selection")
-	formatOption   = flag.String("fmt", defaultFormat, "Select output format")
-	speedOption    = flag.String("s", defaultSpeed, "Set audio speed")
-	configureMode  = flag.Bool("configure", false, "Enter Configuration Mode")
-	helpFlag       = flag.Bool("help", false, "Displays Help Menu")
-	versionFlag    = flag.Bool("version", false, "Displays version information")
-	bufferTextFlag = flag.Bool("b", false, "Places buffer words at start and end of text to help with abrupt starts and ends")
-	rateLimit      = flag.Int("r", 0, "Rate limit for API calls per minute")
-	combineFiles   = flag.Bool("c", false, "Combine multiple files into a single audio file")
-	multiFile      = false
-)
+func main() {
+	flags = parseFlags()
+	var config Config
+	config.configure()
 
-func init() {
-	configure()
-	flag.Parse()
+	if flags.CombineFiles && !isCommandAvailable("ffmpeg") {
+		log.Fatal("ffmpeg is not installed or not found in PATH")
+	}
 
 	switch {
-	case *helpFlag:
+	case flags.HelpFlag:
 		printHelp()
 		os.Exit(0)
-	case *configureMode:
-		writeNewConfig()
+	case flags.ConfigureMode:
+		config.writeNewConfig()
 		os.Exit(0)
-	case *versionFlag:
+	case flags.VersionFlag:
 		versionInformation := common.PrintVersion(tool, version)
 		log.Print(versionInformation)
 		os.Exit(0)
 	default:
-		if *inputFile == "" || *outputFile == "" {
+		if flags.InputFile == "" || flags.OutputFile == "" {
 			log.Printf("Usage: tts -f filename.md -o filename.mp3")
 			os.Exit(0)
 		}
 	}
-}
 
-func main() {
-	chunks := readFileData(*inputFile)
+	chunks := readFileData(flags.InputFile)
 	if len(chunks) > 1 {
 		log.Printf("This will create %d files. Are you sure you wish to continue? (y/n): ", len(chunks))
 		multiFile = true
@@ -97,18 +104,21 @@ func main() {
 			os.Exit(0)
 		}
 	}
+	var createdFiles []string
+	var textFileName string
 
-	if *rateLimit > 0 {
-		rateLimiter = time.Tick(time.Minute / time.Duration(*rateLimit))
+	if flags.CombineFiles {
+		textFileName = fmt.Sprintf("%s.txt", strings.TrimSuffix(flags.OutputFile, filepath.Ext(flags.OutputFile)))
+		createdFiles = append(createdFiles, textFileName)
 	}
 
 	for i, chunk := range chunks {
-		outputFileName := *outputFile
+		outputFileName := flags.OutputFile
 		if multiFile {
-			outputFileName = fmt.Sprintf("%s_%d.mp3", strings.TrimSuffix(*outputFile, filepath.Ext(*outputFile)), i+1)
 
-			if *combineFiles {
-				textFileName := fmt.Sprintf("%s.txt", strings.TrimSuffix(*outputFile, filepath.Ext(*outputFile)))
+			outputFileName = fmt.Sprintf("%s_%d.mp3", strings.TrimSuffix(flags.OutputFile, filepath.Ext(flags.OutputFile)), i+1)
+			createdFiles = append(createdFiles, outputFileName)
+			if flags.CombineFiles {
 				file, err := os.OpenFile(textFileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 
 				checkFatalErrorExists("Error opening text file", err)
@@ -122,52 +132,51 @@ func main() {
 		}
 
 		ttsRequest := TTSRequest{
-			Model:  *modelOption,
-			Voice:  *voiceOption,
-			Format: *formatOption,
+			Model:  flags.ModelOption,
+			Voice:  flags.VoiceOption,
+			Format: flags.FormatOption,
 			Input:  chunk,
-			Speed:  *speedOption,
+			Speed:  flags.SpeedOption,
 		}
 
-		if *rateLimit > 0 {
-			<-rateLimiter
+		if flags.RateLimit > 0 {
+			<-config.rateLimiter
 		}
 
-		tts(ttsRequest, outputFileName)
+		tts(ttsRequest, outputFileName, config)
 	}
 
-	if multiFile && *combineFiles {
-		if !isCommandAvailable("ffmpeg") {
-			log.Fatal("ffmpeg is not installed or not found in PATH")
-		}
+	if multiFile && flags.CombineFiles {
+		textFileName := fmt.Sprintf("%s.txt", strings.TrimSuffix(flags.OutputFile, filepath.Ext(flags.OutputFile)))
 
-		textFileName := fmt.Sprintf("%s.txt", strings.TrimSuffix(*outputFile, filepath.Ext(*outputFile)))
-
-		cmd := exec.Command("ffmpeg", "-f", "concat", "-safe", "0", "-i", textFileName, "-c", "copy", *outputFile)
+		cmd := exec.Command("ffmpeg", "-f", "concat", "-safe", "0", "-i", textFileName, "-c", "copy", flags.OutputFile)
 
 		err := cmd.Run()
 
 		checkFatalErrorExists("Error combining audio files", err)
 
-		//read the text file and remove all files it lists
-		file, err := os.Open(textFileName)
-
-		checkFatalErrorExists("Error opening text file", err)
-
-		defer file.Close()
-
-		scanner := bufio.NewScanner(file)
-		for scanner.Scan() {
-			line := scanner.Text()
-			if err := os.Remove(line); err != nil && !os.IsNotExist(err) {
-				log.Printf("Error deleting audio file %s: %v", line, err)
-			}
-		}
-
-		err = os.Remove(textFileName)
-
-		checkFatalErrorExists("Error deleting text file", err)
+		cleanupFiles(createdFiles)
 	}
+}
+
+func parseFlags() Flags {
+	flags := Flags{}
+
+	flag.StringVar(&flags.InputFile, "f", "", "Input Markdown file")
+	flag.StringVar(&flags.OutputFile, "o", "", "Output audio file")
+	flag.StringVar(&flags.VoiceOption, "v", defaultVoice, "Voice Selection")
+	flag.StringVar(&flags.ModelOption, "m", defaultModel, "Model Selection")
+	flag.StringVar(&flags.FormatOption, "fmt", defaultFormat, "Select output format")
+	flag.StringVar(&flags.SpeedOption, "s", defaultSpeed, "Set audio speed")
+	flag.BoolVar(&flags.ConfigureMode, "configure", false, "Enter Configuration Mode")
+	flag.BoolVar(&flags.HelpFlag, "help", false, "Displays Help Menu")
+	flag.BoolVar(&flags.VersionFlag, "version", false, "Displays version information")
+	flag.BoolVar(&flags.BufferTextFlag, "b", false, "Places buffer words at start and end of text to help with abrupt starts and ends")
+	flag.IntVar(&flags.RateLimit, "r", 0, "Rate limit for API calls per minute")
+	flag.BoolVar(&flags.CombineFiles, "c", false, "Combine multiple files into a single audio file")
+
+	flag.Parse()
+	return flags
 }
 
 //This can be improved in the future to have a single config setup
@@ -175,7 +184,23 @@ func main() {
 //now this single setup works. I will reveiew and refactor if it becomes an issue.
 //For now each file gets a config for its usage
 
-func configure() {
+func (c *Config) configure() {
+
+	c.configPath = getConfigPath()
+
+	if _, err := os.Stat(c.configPath); os.IsNotExist(err) {
+		c.writeNewConfig()
+	} else {
+		c.readConfig()
+	}
+
+	if flags.RateLimit > 0 {
+		c.rateLimiter = time.Tick(time.Minute / time.Duration(flags.RateLimit))
+	}
+
+}
+
+func getConfigPath() string {
 	home, err := os.UserHomeDir()
 	checkFatalErrorExists("Unable to read user home directory", err)
 
@@ -184,15 +209,9 @@ func configure() {
 	err = os.MkdirAll(configDir, 0755)
 	checkFatalErrorExists("Unable to create config directory", err)
 
-	configFilePath = filepath.Join(configDir, CONFIG_FILE)
+	configFilePath := filepath.Join(configDir, CONFIG_FILE)
 
-	if _, err := os.Stat(configFilePath); os.IsNotExist(err) {
-		writeNewConfig()
-		return
-	}
-	checkFatalErrorExists("Unknown issue accessing config", err)
-
-	readConfig()
+	return configFilePath
 
 }
 
@@ -202,17 +221,17 @@ func checkFatalErrorExists(message string, err error) {
 	}
 }
 
-func writeNewConfig() {
+func (c *Config) writeNewConfig() {
 	log.Printf("Please enter your OpenAI API Key: ")
-	fmt.Scanln(&OPENAI_API_KEY)
-	fileData := "OPENAI_API_KEY=" + OPENAI_API_KEY
-	err := os.WriteFile(configFilePath, []byte(fileData), 0600)
-	checkFatalErrorExists("Unable to save config", err)
+	fmt.Scanln(&c.OpenAIAPIKey)
+	fileData := "OPENAI_API_KEY=" + c.OpenAIAPIKey
+	err := os.WriteFile(c.configPath, []byte(fileData), 0600)
+	checkFatalErrorExists("Unable to save config file", err)
 }
 
-func readConfig() {
-	file, err := os.Open(configFilePath)
-	checkFatalErrorExists("unable to read config fil", err)
+func (c *Config) readConfig() {
+	file, err := os.Open(c.configPath)
+	checkFatalErrorExists("Unable to open config file", err)
 	defer file.Close()
 
 	scanner := bufio.NewScanner(file)
@@ -223,9 +242,8 @@ func readConfig() {
 			key := strings.TrimSpace(parts[0])
 			value := strings.TrimSpace(parts[1])
 			if key == "OPENAI_API_KEY" {
-				OPENAI_API_KEY = value
+				c.OpenAIAPIKey = value
 			}
-
 		}
 	}
 
@@ -233,9 +251,10 @@ func readConfig() {
 		checkFatalErrorExists("unable to read config file", err)
 	}
 
-	if OPENAI_API_KEY == "" {
-		writeNewConfig()
+	if c.OpenAIAPIKey == "" {
+		c.writeNewConfig()
 	}
+
 }
 
 func readFileData(inputFile string) []string {
@@ -245,7 +264,7 @@ func readFileData(inputFile string) []string {
 	endText := "\nEnd Text"
 
 	chunkSize := API_MAX_CHARACTERS
-	if *bufferTextFlag {
+	if flags.BufferTextFlag {
 
 		startTextLen := utf8.RuneCountInString(startText)
 		endTextLen := utf8.RuneCountInString(endText)
@@ -259,7 +278,7 @@ func readFileData(inputFile string) []string {
 	for len(inputRunes) > 0 {
 		if len(inputRunes) <= chunkSize {
 			chunk := string(inputRunes)
-			if *bufferTextFlag {
+			if flags.BufferTextFlag {
 				chunks = append(chunks, startText+chunk+endText)
 				break
 			}
@@ -270,7 +289,7 @@ func readFileData(inputFile string) []string {
 		for ; splitIndex > 0 && !unicode.IsSpace(inputRunes[splitIndex]); splitIndex-- {
 		}
 		chunk := string(inputRunes[:splitIndex])
-		if *bufferTextFlag {
+		if flags.BufferTextFlag {
 			chunks = append(chunks, startText+chunk+endText)
 		} else {
 			chunks = append(chunks, chunk)
@@ -286,18 +305,26 @@ func isCommandAvailable(name string) bool {
 	return err == nil
 }
 
-func tts(ttsRequest TTSRequest, outputFile string) {
+func tts(ttsRequest TTSRequest, outputFile string, config Config) {
 	requestBody, err := json.Marshal(ttsRequest)
 	checkFatalErrorExists("Error: Unable to create request payload", err)
 
 	req, err := http.NewRequest("POST", "https://api.openai.com/v1/audio/speech", bytes.NewBuffer(requestBody))
 	checkFatalErrorExists("Error: Unable to create HTTP request", err)
 
-	req.Header.Set("Authorization", "Bearer "+OPENAI_API_KEY)
+	req.Header.Set("Authorization", "Bearer "+config.OpenAIAPIKey)
 	req.Header.Set("Content-Type", "application/json")
 
 	makeHttpRequest(req, outputFile)
 
+}
+
+func cleanupFiles(files []string) {
+	for _, file := range files {
+		log.Printf("Deleting file: %s\n", file)
+		err := os.Remove(file)
+		checkFatalErrorExists("Error deleting file", err)
+	}
 }
 
 func makeHttpRequest(req *http.Request, outputFile string) {

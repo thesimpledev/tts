@@ -9,10 +9,6 @@ This project is a continuation of my previous [Linux Tools for Windows](https://
 ## To Do
 
 - [ ] tts add optional flag for break point between audio files in text.
-- [ ] Fix Delete Mp3 File as it is currently broken (tries to delete non existant file)
-- [ ] Review moving global variables into config struct
-- [ ] Orginize Command Line Flags to clean up global space
-- [ ] Move flags from int to main
 - [ ] improve error messages
 - [ ] Clean up created files on early exit
 
