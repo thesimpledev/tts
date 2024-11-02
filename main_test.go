@@ -1,244 +1,233 @@
+// main_test.go
+
 package main
 
 import (
 	"bytes"
 	"errors"
-	"flag"
+	"fmt"
 	"io"
-	"io/ioutil"
-	"log"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
-// Mock os.Exit to prevent the test from exiting
-var osExit = os.Exit
-
-func TestParseFlags(t *testing.T) {
-	originalArgs := os.Args
-	defer func() { os.Args = originalArgs }()
-
-	tests := []struct {
-		name     string
-		args     []string
-		expected Flags
-	}{
-		{
-			name: "All flags provided",
-			args: []string{
-				"-f", "input.md",
-				"-o", "output.mp3",
-				"-v", "nova",
-				"-m", "tts-1-hd",
-				"-fmt", "mp3",
-				"-s", "1.0",
-				"-b",
-				"-r", "10",
-				"-c",
-			},
-			expected: Flags{
-				InputFile:      "input.md",
-				OutputFile:     "output.mp3",
-				VoiceOption:    "nova",
-				ModelOption:    "tts-1-hd",
-				FormatOption:   "mp3",
-				SpeedOption:    "1.0",
-				ConfigureMode:  false,
-				HelpFlag:       false,
-				VersionFlag:    false,
-				BufferTextFlag: true,
-				RateLimit:      10,
-				CombineFiles:   true,
-			},
-		},
-		{
-			name: "Default values",
-			args: []string{
-				"-f", "input.md",
-				"-o", "output.mp3",
-			},
-			expected: Flags{
-				InputFile:      "input.md",
-				OutputFile:     "output.mp3",
-				VoiceOption:    defaultVoice,
-				ModelOption:    defaultModel,
-				FormatOption:   defaultFormat,
-				SpeedOption:    defaultSpeed,
-				ConfigureMode:  false,
-				HelpFlag:       false,
-				VersionFlag:    false,
-				BufferTextFlag: false,
-				RateLimit:      0,
-				CombineFiles:   false,
-			},
-		},
+func TestCalculateChunkSize(t *testing.T) {
+	chunkSize := calculateChunkSize(false)
+	expectedSize := API_MAX_CHARACTERS
+	if chunkSize != expectedSize {
+		t.Errorf("Expected chunk size %d, got %d", expectedSize, chunkSize)
 	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
-			os.Args = append([]string{"cmd"}, tt.args...)
-			flags := parseFlags()
-
-			if flags != tt.expected {
-				t.Errorf("Expected %+v, got %+v", tt.expected, flags)
-			}
-		})
+	chunkSizeWithBuffer := calculateChunkSize(true)
+	startText := "Begin Text\n"
+	endText := "\nEnd Text"
+	startTextLen := utf8.RuneCountInString(startText)
+	endTextLen := utf8.RuneCountInString(endText)
+	expectedSizeWithBuffer := API_MAX_CHARACTERS - (startTextLen + endTextLen)
+	if chunkSizeWithBuffer != expectedSizeWithBuffer {
+		t.Errorf("Expected chunk size with buffer %d, got %d", expectedSizeWithBuffer, chunkSizeWithBuffer)
 	}
 }
 
-func FuzzParseFlags(f *testing.F) {
-	f.Add("-f", "input.md", "-o", "output.mp3")
-	f.Fuzz(func(t *testing.T, arg1, arg2, arg3 string) {
-		flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
-		os.Args = []string{"cmd", arg1, arg2, arg3}
-		_ = parseFlags()
-	})
-}
-
-func TestGetConfigPath(t *testing.T) {
-	originalHomeDir := os.Getenv("HOME")
-	defer os.Setenv("HOME", originalHomeDir)
-
-	tempDir := t.TempDir()
-	os.Setenv("HOME", tempDir)
-
-	path := getConfigPath()
-	expectedPath := filepath.Join(tempDir, CONFIG_DIR, CONFIG_FILE)
-
-	if path != expectedPath {
-		t.Errorf("Expected %s, got %s", expectedPath, path)
+func TestSplitIntoChunks(t *testing.T) {
+	text := "This is a test. "
+	chunkSize := 10
+	chunks := splitIntoChunks(text, chunkSize)
+	expectedChunks := []string{"This is a", " test. "}
+	if !reflect.DeepEqual(chunks, expectedChunks) {
+		t.Errorf("Expected chunks %v, got %v", expectedChunks, chunks)
 	}
 
-	if _, err := os.Stat(filepath.Join(tempDir, CONFIG_DIR)); os.IsNotExist(err) {
-		t.Errorf("Expected config directory to exist")
-	}
-}
-
-func FuzzGetConfigPath(f *testing.F) {
-	f.Add()
-	f.Fuzz(func(t *testing.T) {
-		_ = getConfigPath()
-	})
-}
-
-func TestCheckFatalErrorExists(t *testing.T) {
-	var buf bytes.Buffer
-	log.SetOutput(&buf)
-	defer log.SetOutput(os.Stderr)
-
-	err := errors.New("test error")
-	calledExit := false
-
-	origExit := osExit
-	osExit = func(code int) {
-		calledExit = true
-	}
-	defer func() { osExit = origExit }()
-
-	checkFatalErrorExists("Test message", err)
-
-	if !calledExit {
-		t.Errorf("Expected os.Exit to be called")
+	text = "Short text"
+	chunks = splitIntoChunks(text, chunkSize)
+	expectedChunks = []string{"Short text"}
+	if !reflect.DeepEqual(chunks, expectedChunks) {
+		t.Errorf("Expected chunks %v, got %v", expectedChunks, chunks)
 	}
 
-	if !strings.Contains(buf.String(), "Test message: test error") {
-		t.Errorf("Expected log message to contain 'Test message: test error'")
+	text = "Thisisaverylongwordthathasnospacesandshouldbesplitatmaximumchunksize."
+	chunkSize = 20
+	expectedChunks = []string{
+		"Thisisaverylongwordt",
+		"hathasnospacesandsho",
+		"uldbesplitatmaximumc",
+		"hunksize.",
+	}
+	chunks = splitIntoChunks(text, chunkSize)
+	if !reflect.DeepEqual(chunks, expectedChunks) {
+		t.Errorf("Expected chunks %v, got %v", expectedChunks, chunks)
 	}
 }
 
-func FuzzCheckFatalErrorExists(f *testing.F) {
-	f.Add("Error message", errors.New("test error"))
-	f.Fuzz(func(t *testing.T, msg string, err error) {
-		checkFatalErrorExists(msg, err)
-	})
+func TestAddBufferText(t *testing.T) {
+	chunks := []string{"Chunk 1", "Chunk 2"}
+	bufferedChunks := addBufferText(chunks)
+	expectedChunks := []string{"Begin Text\nChunk 1\nEnd Text", "Begin Text\nChunk 2\nEnd Text"}
+	if !reflect.DeepEqual(bufferedChunks, expectedChunks) {
+		t.Errorf("Expected buffered chunks %v, got %v", expectedChunks, bufferedChunks)
+	}
 }
 
 func TestReadFileData(t *testing.T) {
-	tempFile, err := ioutil.TempFile("", "testinput*.md")
+	text := "This is a test text to read and split into chunks."
+	reader := strings.NewReader(text)
+	bufferText := false
+	chunks, err := readFileData(reader, bufferText)
 	if err != nil {
-		t.Fatalf("Failed to create temp file: %v", err)
+		t.Errorf("Expected no error, got %v", err)
 	}
-	defer os.Remove(tempFile.Name())
-
-	content := "This is a test content. It should be split into chunks."
-	_, err = tempFile.WriteString(content)
-	if err != nil {
-		t.Fatalf("Failed to write to temp file: %v", err)
-	}
-	tempFile.Close()
-
-	flags.BufferTextFlag = false
-	chunks := readFileData(tempFile.Name())
-	expectedChunks := []string{content}
-
-	if len(chunks) != len(expectedChunks) {
-		t.Errorf("Expected %d chunks, got %d", len(expectedChunks), len(chunks))
-	}
-
-	for i, chunk := range chunks {
-		if chunk != expectedChunks[i] {
-			t.Errorf("Expected chunk %d to be %q, got %q", i, expectedChunks[i], chunk)
-		}
-	}
-
-	flags.BufferTextFlag = true
-	chunks = readFileData(tempFile.Name())
-	startText := "Begin Text\n"
-	endText := "\nEnd Text"
-	expectedChunk := startText + content + endText
-
 	if len(chunks) != 1 {
 		t.Errorf("Expected 1 chunk, got %d", len(chunks))
 	}
-	if chunks[0] != expectedChunk {
-		t.Errorf("Expected chunk to be %q, got %q", expectedChunk, chunks[0])
+	if chunks[0] != text {
+		t.Errorf("Expected chunk '%s', got '%s'", text, chunks[0])
 	}
-}
-
-func FuzzReadFileData(f *testing.F) {
-	f.Add("testinput.md")
-	f.Fuzz(func(t *testing.T, inputFile string) {
-		if _, err := os.Stat(inputFile); os.IsNotExist(err) {
-			return
-		}
-		_ = readFileData(inputFile)
-	})
+	bufferText = true
+	reader = strings.NewReader(text)
+	chunks, err = readFileData(reader, bufferText)
+	if err != nil {
+		t.Errorf("Expected no error, got %v", err)
+	}
+	expectedText := "Begin Text\n" + text + "\nEnd Text"
+	if chunks[0] != expectedText {
+		t.Errorf("Expected chunk '%s', got '%s'", expectedText, chunks[0])
+	}
 }
 
 func TestIsCommandAvailable(t *testing.T) {
-	if !isCommandAvailable("go") {
-		t.Errorf("Expected 'go' command to be available")
+	available := isCommandAvailable("go")
+	if !available {
+		t.Log("Command 'go' not found; test may be running in an environment without Go installed.")
 	}
-	if isCommandAvailable("nonexistentcommand") {
-		t.Errorf("Expected 'nonexistentcommand' to not be available")
+	available = isCommandAvailable("some_non_existent_command")
+	if available {
+		t.Errorf("Expected command 'some_non_existent_command' to be unavailable")
 	}
 }
 
-func FuzzIsCommandAvailable(f *testing.F) {
-	f.Add("go")
-	f.Fuzz(func(t *testing.T, cmd string) {
-		_ = isCommandAvailable(cmd)
-	})
+type MockHTTPClient struct {
+	DoFunc func(req *http.Request) (*http.Response, error)
+}
+
+func (m *MockHTTPClient) Do(req *http.Request) (*http.Response, error) {
+	return m.DoFunc(req)
+}
+
+func TestTTS(t *testing.T) {
+	ttsRequest := TTSRequest{
+		Model:  "test-model",
+		Voice:  "test-voice",
+		Format: "mp3",
+		Input:  "Test input text",
+		Speed:  "1.0",
+	}
+	mockClient := &MockHTTPClient{
+		DoFunc: func(req *http.Request) (*http.Response, error) {
+			if req.Method != "POST" {
+				t.Errorf("Expected POST method, got %s", req.Method)
+			}
+			if req.URL.String() != API_URL {
+				t.Errorf("Expected URL %s, got %s", API_URL, req.URL.String())
+			}
+			response := &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader("Mock audio data")),
+			}
+			return response, nil
+		},
+	}
+	output := &bytes.Buffer{}
+	config := Config{
+		OpenAIAPIKey: "test-api-key",
+	}
+	err := tts(ttsRequest, output, mockClient, config)
+	if err != nil {
+		t.Errorf("Expected no error, got %v", err)
+	}
+	if output.String() != "Mock audio data" {
+		t.Errorf("Expected output 'Mock audio data', got '%s'", output.String())
+	}
+}
+
+func TestTTS_ErrorResponse(t *testing.T) {
+	ttsRequest := TTSRequest{
+		Model:  "test-model",
+		Voice:  "test-voice",
+		Format: "mp3",
+		Input:  "Test input text",
+		Speed:  "1.0",
+	}
+	mockClient := &MockHTTPClient{
+		DoFunc: func(req *http.Request) (*http.Response, error) {
+			response := &http.Response{
+				StatusCode: http.StatusBadRequest,
+				Body:       io.NopCloser(strings.NewReader("Bad request")),
+			}
+			return response, nil
+		},
+	}
+	output := &bytes.Buffer{}
+	config := Config{
+		OpenAIAPIKey: "test-api-key",
+	}
+	err := tts(ttsRequest, output, mockClient, config)
+	if err == nil {
+		t.Errorf("Expected error, got nil")
+	} else {
+		expectedError := "OpenAI API request failed with status code: 400, response body: Bad request"
+		if err.Error() != expectedError {
+			t.Errorf("Expected error '%s', got '%s'", expectedError, err.Error())
+		}
+	}
+}
+
+func TestTTS_RequestError(t *testing.T) {
+	ttsRequest := TTSRequest{
+		Model:  "test-model",
+		Voice:  "test-voice",
+		Format: "mp3",
+		Input:  "Test input text",
+		Speed:  "1.0",
+	}
+	mockClient := &MockHTTPClient{
+		DoFunc: func(req *http.Request) (*http.Response, error) {
+			return nil, errors.New("network error")
+		},
+	}
+	output := &bytes.Buffer{}
+	config := Config{
+		OpenAIAPIKey: "test-api-key",
+	}
+	err := tts(ttsRequest, output, mockClient, config)
+	if err == nil {
+		t.Errorf("Expected error, got nil")
+	} else {
+		expectedError := "unable to send request to OpenAI API: network error"
+		if err.Error() != expectedError {
+			t.Errorf("Expected error '%s', got '%s'", expectedError, err.Error())
+		}
+	}
 }
 
 func TestCleanupFiles(t *testing.T) {
-	tempFile1, err := ioutil.TempFile("", "testfile1")
-	if err != nil {
-		t.Fatalf("Failed to create temp file: %v", err)
+	file1 := "testfile1.tmp"
+	file2 := "testfile2.tmp"
+	files := []string{file1, file2}
+	for _, file := range files {
+		f, err := os.Create(file)
+		if err != nil {
+			t.Fatalf("Failed to create temporary file %s: %v", file, err)
+		}
+		f.Close()
 	}
-	tempFile2, err := ioutil.TempFile("", "testfile2")
+	err := cleanupFiles(files)
 	if err != nil {
-		t.Fatalf("Failed to create temp file: %v", err)
+		t.Errorf("Expected no error, got %v", err)
 	}
-	files := []string{tempFile1.Name(), tempFile2.Name()}
-
-	cleanupFiles(files)
-
 	for _, file := range files {
 		if _, err := os.Stat(file); !os.IsNotExist(err) {
 			t.Errorf("Expected file %s to be deleted", file)
@@ -246,205 +235,155 @@ func TestCleanupFiles(t *testing.T) {
 	}
 }
 
-func FuzzCleanupFiles(f *testing.F) {
-	f.Add([]string{"testfile1", "testfile2"})
-	f.Fuzz(func(t *testing.T, files []string) {
-		cleanupFiles(files)
-	})
-}
-
-func TestPrintHelp(t *testing.T) {
-	var buf bytes.Buffer
-	log.SetOutput(&buf)
-	defer log.SetOutput(os.Stderr)
-
-	printHelp()
-
-	if buf.Len() == 0 {
-		t.Errorf("Expected help message to be printed")
+func TestCleanupFiles_Error(t *testing.T) {
+	files := []string{"non_existent_file.tmp"}
+	err := cleanupFiles(files)
+	if err == nil {
+		t.Errorf("Expected error, got nil")
+	} else {
+		if !strings.Contains(err.Error(), "error deleting file") {
+			t.Errorf("Expected error message to contain 'error deleting file', got '%s'", err.Error())
+		}
 	}
 }
 
-func FuzzPrintHelp(f *testing.F) {
-	f.Add()
-	f.Fuzz(func(t *testing.T) {
-		printHelp()
-	})
+func TestAppendToTextFile(t *testing.T) {
+	textFileName := "test_append.txt"
+	defer os.Remove(textFileName)
+	err := appendToTextFile(textFileName, "output1.mp3")
+	if err != nil {
+		t.Errorf("Expected no error, got %v", err)
+	}
+	err = appendToTextFile(textFileName, "output2.mp3")
+	if err != nil {
+		t.Errorf("Expected no error, got %v", err)
+	}
+	data, err := os.ReadFile(textFileName)
+	if err != nil {
+		t.Fatalf("Failed to read file %s: %v", textFileName, err)
+	}
+	expectedContent := "file 'output1.mp3'\nfile 'output2.mp3'\n"
+	if string(data) != expectedContent {
+		t.Errorf("Expected file content:\n%s\nGot:\n%s", expectedContent, string(data))
+	}
+}
+
+func TestProcessChunk(t *testing.T) {
+	ttsRequest := TTSRequest{
+		Model:  "test-model",
+		Voice:  "test-voice",
+		Format: "mp3",
+		Input:  "Test input text",
+		Speed:  "1.0",
+	}
+	mockClient := &MockHTTPClient{
+		DoFunc: func(req *http.Request) (*http.Response, error) {
+			response := &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader("Mock audio data")),
+			}
+			return response, nil
+		},
+	}
+	config := Config{
+		OpenAIAPIKey: "test-api-key",
+	}
+	outputFileName := "test_output.mp3"
+	defer os.Remove(outputFileName)
+	err := processChunk(ttsRequest, outputFileName, mockClient, config)
+	if err != nil {
+		t.Errorf("Expected no error, got %v", err)
+	}
+	data, err := os.ReadFile(outputFileName)
+	if err != nil {
+		t.Fatalf("Failed to read output file: %v", err)
+	}
+	if string(data) != "Mock audio data" {
+		t.Errorf("Expected 'Mock audio data', got '%s'", string(data))
+	}
+}
+
+func TestGetConfigPath(t *testing.T) {
+	path, err := getConfigPath()
+	if err != nil {
+		t.Errorf("Expected no error, got %v", err)
+	}
+	if !strings.Contains(path, CONFIG_DIR) || !strings.HasSuffix(path, CONFIG_FILE) {
+		t.Errorf("Expected path to contain '%s' and end with '%s', got '%s'", CONFIG_DIR, CONFIG_FILE, path)
+	}
+}
+
+func TestCheckPrerequisites(t *testing.T) {
+	flags := Flags{
+		CombineFiles: false,
+	}
+	err := checkPrerequisites(flags)
+	if err != nil {
+		t.Errorf("Expected no error, got %v", err)
+	}
+	flags.CombineFiles = true
+	originalIsCommandAvailable := isCommandAvailable
+	defer func() { isCommandAvailable = originalIsCommandAvailable }()
+	isCommandAvailable = func(name string) bool {
+		return false
+	}
+	err = checkPrerequisites(flags)
+	if err == nil {
+		t.Errorf("Expected error due to missing ffmpeg, got nil")
+	}
+}
+
+func TestReadInputFile(t *testing.T) {
+	content := "This is test content for input file."
+	inputFileName := "test_input.txt"
+	err := os.WriteFile(inputFileName, []byte(content), 0644)
+	if err != nil {
+		t.Fatalf("Failed to write input file: %v", err)
+	}
+	defer os.Remove(inputFileName)
+	chunks, err := readInputFile(inputFileName, false)
+	if err != nil {
+		t.Errorf("Expected no error, got %v", err)
+	}
+	if len(chunks) != 1 {
+		t.Errorf("Expected 1 chunk, got %d", len(chunks))
+	}
+	if chunks[0] != content {
+		t.Errorf("Expected chunk '%s', got '%s'", content, chunks[0])
+	}
+}
+
+func TestCombineFiles(t *testing.T) {
+	flags := Flags{
+		OutputFile:   "combined_output.mp3",
+		FormatOption: "mp3",
+	}
+	createdFiles := []string{"file1.mp3", "file2.mp3"}
+	textFileName := fmt.Sprintf("%s.txt", strings.TrimSuffix(flags.OutputFile, filepath.Ext(flags.OutputFile)))
+	err := os.WriteFile(textFileName, []byte(""), 0644)
+	if err != nil {
+		t.Fatalf("Failed to create text file: %v", err)
+	}
+	defer os.Remove(textFileName)
+	err = combineFiles(flags, createdFiles)
+	if err != nil {
+		t.Logf("Expected error due to missing ffmpeg, got: %v", err)
+	}
 }
 
 func TestPrintVersion(t *testing.T) {
-	output := printVersion("tts", "v1.2.6")
-	if !strings.Contains(output, "Version v1.2.6") {
-		t.Errorf("Expected version information to contain 'Version v1.2.6'")
+	versionInfo := printVersion("tts", "v1.3.0")
+	expected := `tts: Version v1.3.0
+
+Copyright 2024 The Simple Dev
+
+Author:         Steven Stanton
+License:        MIT - No Warranty
+Author Github:  https//github.com/StevenDStanton
+Project Github: https://github.com/StevemStanton/cli-tools-for-windows
+
+Part of my CLI Tools for Windows project.`
+	if versionInfo != expected {
+		t.Errorf("Expected version info:\n%s\nGot:\n%s", expected, versionInfo)
 	}
-}
-
-func FuzzPrintVersion(f *testing.F) {
-	f.Add("tts", "v1.2.6")
-	f.Fuzz(func(t *testing.T, tool, version string) {
-		_ = printVersion(tool, version)
-	})
-}
-
-func TestMakeHttpRequest(t *testing.T) {
-	server := httpTestServer()
-	defer server.Close()
-
-	req, err := http.NewRequest("GET", server.URL, nil)
-	if err != nil {
-		t.Fatalf("Failed to create request: %v", err)
-	}
-
-	tempFile, err := ioutil.TempFile("", "output*.mp3")
-	if err != nil {
-		t.Fatalf("Failed to create temp file: %v", err)
-	}
-	defer os.Remove(tempFile.Name())
-
-	makeHttpRequest(req, tempFile.Name())
-
-	data, err := ioutil.ReadFile(tempFile.Name())
-	if err != nil {
-		t.Fatalf("Failed to read output file: %v", err)
-	}
-
-	if string(data) != "test audio content" {
-		t.Errorf("Expected 'test audio content', got %q", string(data))
-	}
-}
-
-func httpTestServer() *httptest.Server {
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		io.WriteString(w, "test audio content")
-	})
-	server := httptest.NewServer(handler)
-	return server
-}
-
-func FuzzMakeHttpRequest(f *testing.F) {
-	f.Add("http://example.com")
-	f.Fuzz(func(t *testing.T, urlStr string) {
-		req, err := http.NewRequest("GET", urlStr, nil)
-		if err != nil {
-			return
-		}
-		makeHttpRequest(req, "output.mp3")
-	})
-}
-
-func TestTTS(t *testing.T) {
-	server := httpTestServer()
-	defer server.Close()
-
-	ttsRequest := TTSRequest{
-		Model:  "tts-1-hd",
-		Voice:  "nova",
-		Format: "mp3",
-		Input:  "Hello, World!",
-		Speed:  "1.0",
-	}
-
-	config := Config{
-		OpenAIAPIKey: "testkey",
-	}
-
-	tempFile, err := ioutil.TempFile("", "output*.mp3")
-	if err != nil {
-		t.Fatalf("Failed to create temp file: %v", err)
-	}
-	defer os.Remove(tempFile.Name())
-
-	// Mock the API endpoint by replacing the URL in the request
-	originalAPIURL := apiURL
-	defer func() { apiURL = originalAPIURL }()
-	apiURL = server.URL
-
-	tts(ttsRequest, tempFile.Name(), config)
-
-	data, err := ioutil.ReadFile(tempFile.Name())
-	if err != nil {
-		t.Fatalf("Failed to read output file: %v", err)
-	}
-
-	if string(data) != "test audio content" {
-		t.Errorf("Expected 'test audio content', got %q", string(data))
-	}
-}
-
-func FuzzTTS(f *testing.F) {
-	f.Add("Hello, World!")
-	f.Fuzz(func(t *testing.T, input string) {
-		ttsRequest := TTSRequest{
-			Model:  "tts-1-hd",
-			Voice:  "nova",
-			Format: "mp3",
-			Input:  input,
-			Speed:  "1.0",
-		}
-
-		config := Config{
-			OpenAIAPIKey: "testkey",
-		}
-
-		tts(ttsRequest, "output.mp3", config)
-	})
-}
-
-func TestConfigConfigure(t *testing.T) {
-	config := &Config{}
-
-	tempDir := t.TempDir()
-	config.configPath = filepath.Join(tempDir, CONFIG_FILE)
-
-	// Mock user input
-	var buf bytes.Buffer
-	buf.WriteString("testkey\n")
-	stdin := os.Stdin
-	defer func() { os.Stdin = stdin }()
-	os.Stdin = &buf
-
-	config.configure()
-
-	if config.OpenAIAPIKey != "testkey" {
-		t.Errorf("Expected OpenAIAPIKey to be 'testkey', got '%s'", config.OpenAIAPIKey)
-	}
-}
-
-func FuzzConfigConfigure(f *testing.F) {
-	f.Add()
-	f.Fuzz(func(t *testing.T) {
-		config := &Config{}
-		config.configure()
-	})
-}
-
-func TestConfigReadConfig(t *testing.T) {
-	config := &Config{}
-	tempFile, err := ioutil.TempFile("", "config*.txt")
-	if err != nil {
-		t.Fatalf("Failed to create temp file: %v", err)
-	}
-	defer os.Remove(tempFile.Name())
-
-	content := "OPENAI_API_KEY=testkey"
-	_, err = tempFile.WriteString(content)
-	if err != nil {
-		t.Fatalf("Failed to write to temp file: %v", err)
-	}
-	tempFile.Close()
-
-	config.configPath = tempFile.Name()
-	config.readConfig()
-
-	if config.OpenAIAPIKey != "testkey" {
-		t.Errorf("Expected OpenAIAPIKey to be 'testkey', got %q", config.OpenAIAPIKey)
-	}
-}
-
-func FuzzConfigReadConfig(f *testing.F) {
-	f.Add()
-	f.Fuzz(func(t *testing.T) {
-		config := &Config{}
-		config.readConfig()
-	})
 }

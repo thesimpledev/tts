@@ -444,7 +444,7 @@ func promptForConfirmation(numFiles int) (bool, error) {
 	return true, nil
 }
 
-func isCommandAvailable(name string) bool {
+var isCommandAvailable = func(name string) bool {
 	_, err := exec.LookPath(name)
 	return err == nil
 }
