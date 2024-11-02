@@ -18,53 +18,21 @@ jobs:
         with:
           go-version: '1.22.4'
 
-      - name: Synchronize Go Work
-        run: go work sync
-
       - name: Display Environment Information
         run: go env
 
       - name: Install dependencies and run tests
         run: |
           mkdir -p coverage
-          cwd=${{ github.workspace }}
-
-          go work sync # Ensure go.work dependencies are synchronized
-
-          for dir in ./*; do
-            if [ -d "$dir" ]; then
-              echo "Processing directory: $dir"
-              cd $dir
-
-              if [ -f "go.mod" ]; then
-                go mod tidy
-                go mod download
-              fi
-
-              if ls *_test.go 1> /dev/null 2>&1; then
-                go test -v -covermode=atomic -coverprofile=$cwd/coverage/$(basename $dir).out ./...
-              else
-                echo "No test files found in $dir"
-              fi
-
-              cd $cwd
-            fi
-          done
-
-      - name: Merge coverage files
-        run: |
-          echo "mode: set" > coverage/cover.out
-          find coverage -name '*.out' | grep -v "cover.out" | xargs grep -h -v "^mode:" >> coverage/cover.out
+          go mod tidy
+          go mod download
+          go test -v -covermode=atomic -coverprofile=coverage/cover.out ./...
 
       - name: Adjust coverage paths
         run: |
-          # Create a temp file for adjusted output
           TEMP_COVER_OUT=$(mktemp)
           echo "mode: set" > $TEMP_COVER_OUT
-
-          # Adjust paths to be relative in the coverage file 
           sed 's#$(pwd)/##g' coverage/cover.out | grep -v "^mode:" >> $TEMP_COVER_OUT
-
           mv $TEMP_COVER_OUT coverage/cover.out
 
       - name: Upload Coverage to Coveralls

@@ -16,8 +16,6 @@ import (
 	"time"
 	"unicode"
 	"unicode/utf8"
-
-	"github.com/StevenDStanton/cli-tools/common"
 )
 
 type TTSRequest struct {
@@ -83,7 +81,7 @@ func main() {
 		config.writeNewConfig()
 		os.Exit(0)
 	case flags.VersionFlag:
-		versionInformation := common.PrintVersion(tool, version)
+		versionInformation := printVersion(tool, version)
 		log.Print(versionInformation)
 		os.Exit(0)
 	default:
@@ -376,4 +374,17 @@ Example:
   tts -f input.md -o output.mp3
 `
 	log.Print(help)
+}
+
+func printVersion(tool string, version string) string {
+	return fmt.Sprintf(`%s: Version %s
+
+Copyright 2024 The Simple Dev
+
+Author:         Steven Stanton
+License:        MIT - No Warranty
+Author Github:  https//github.com/StevenDStanton
+Project Github: https://github.com/StevemStanton/cli-tools-for-windows
+
+Part of my CLI Tools for Windows project.`, tool, version)
 }
