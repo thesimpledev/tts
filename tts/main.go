@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -28,14 +29,15 @@ type TTSRequest struct {
 }
 
 const (
-	CONFIG_FILE   = "tts.config"
-	CONFIG_DIR    = ".cli-tools"
-	defaultVoice  = "nova"
-	defaultModel  = "tts-1-hd"
-	defaultFormat = "mp3"
-	defaultSpeed  = "1.0"
-	version       = "v1.1.3"
-	tool          = "tts"
+	CONFIG_FILE        = "tts.config"
+	CONFIG_DIR         = ".cli-tools"
+	defaultVoice       = "nova"
+	defaultModel       = "tts-1-hd"
+	defaultFormat      = "mp3"
+	defaultSpeed       = "1.0"
+	version            = "v1.2.0"
+	tool               = "tts"
+	API_MAX_CHARACTERS = 4096
 )
 
 var (
@@ -56,6 +58,8 @@ var (
 	versionFlag    = flag.Bool("version", false, "Displays version information")
 	bufferTextFlag = flag.Bool("b", false, "Places buffer words at start and end of text to help with abrupt starts and ends")
 	rateLimit      = flag.Int("r", 0, "Rate limit for API calls per minute")
+	combineFiles   = flag.Bool("c", false, "Combine multiple files into a single audio file")
+	multiFile      = false
 )
 
 func init() {
@@ -71,11 +75,11 @@ func init() {
 		os.Exit(0)
 	case *versionFlag:
 		versionInformation := common.PrintVersion(tool, version)
-		fmt.Println(versionInformation)
+		log.Print(versionInformation)
 		os.Exit(0)
 	default:
 		if *inputFile == "" || *outputFile == "" {
-			fmt.Println("Usage: tts -f filename.md -o filename.mp3")
+			log.Printf("Usage: tts -f filename.md -o filename.mp3")
 			os.Exit(0)
 		}
 	}
@@ -84,11 +88,12 @@ func init() {
 func main() {
 	chunks := readFileData(*inputFile)
 	if len(chunks) > 1 {
-		fmt.Printf("This will create %d files. Are you sure you wish to continue? (y/n): ", len(chunks))
+		log.Printf("This will create %d files. Are you sure you wish to continue? (y/n): ", len(chunks))
+		multiFile = true
 		var response string
 		fmt.Scanln(&response)
 		if strings.ToLower(response) != "y" {
-			fmt.Println("Operation cancelled.")
+			log.Printf("Operation cancelled.")
 			os.Exit(0)
 		}
 	}
@@ -98,12 +103,24 @@ func main() {
 	}
 
 	for i, chunk := range chunks {
-		var outputFileName string
-		if len(chunks) == 1 {
-			outputFileName = *outputFile
-		} else {
+		outputFileName := *outputFile
+		if multiFile {
 			outputFileName = fmt.Sprintf("%s_%d.mp3", strings.TrimSuffix(*outputFile, filepath.Ext(*outputFile)), i+1)
+
+			if *combineFiles {
+				textFileName := fmt.Sprintf("%s.txt", strings.TrimSuffix(*outputFile, filepath.Ext(*outputFile)))
+				file, err := os.OpenFile(textFileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+
+				checkFatalErrorExists("Error opening text file", err)
+
+				defer file.Close()
+
+				_, err = file.WriteString("file '" + outputFileName + "'\n")
+
+				checkFatalErrorExists("Error writing to text file", err)
+			}
 		}
+
 		ttsRequest := TTSRequest{
 			Model:  *modelOption,
 			Voice:  *voiceOption,
@@ -117,6 +134,39 @@ func main() {
 		}
 
 		tts(ttsRequest, outputFileName)
+	}
+
+	if multiFile && *combineFiles {
+		if !isCommandAvailable("ffmpeg") {
+			log.Fatal("ffmpeg is not installed or not found in PATH")
+		}
+
+		textFileName := fmt.Sprintf("%s.txt", strings.TrimSuffix(*outputFile, filepath.Ext(*outputFile)))
+
+		cmd := exec.Command("ffmpeg", "-f", "concat", "-safe", "0", "-i", textFileName, "-c", "copy", *outputFile)
+
+		err := cmd.Run()
+
+		checkFatalErrorExists("Error combining audio files", err)
+
+		//read the text file and remove all files it lists
+		file, err := os.Open(textFileName)
+
+		checkFatalErrorExists("Error opening text file", err)
+
+		defer file.Close()
+
+		scanner := bufio.NewScanner(file)
+		for scanner.Scan() {
+			line := scanner.Text()
+			if err := os.Remove(line); err != nil && !os.IsNotExist(err) {
+				log.Printf("Error deleting audio file %s: %v", line, err)
+			}
+		}
+
+		err = os.Remove(textFileName)
+
+		checkFatalErrorExists("Error deleting text file", err)
 	}
 }
 
@@ -153,14 +203,11 @@ func checkFatalErrorExists(message string, err error) {
 }
 
 func writeNewConfig() {
-	fmt.Print("Please enter your OpenAI API Key: ")
+	log.Printf("Please enter your OpenAI API Key: ")
 	fmt.Scanln(&OPENAI_API_KEY)
 	fileData := "OPENAI_API_KEY=" + OPENAI_API_KEY
 	err := os.WriteFile(configFilePath, []byte(fileData), 0600)
-	checkFatalErrorExists("", err)
-	if err != nil {
-		log.Fatalf("Unable to save config: %v\n", err)
-	}
+	checkFatalErrorExists("Unable to save config", err)
 }
 
 func readConfig() {
@@ -197,7 +244,7 @@ func readFileData(inputFile string) []string {
 	startText := "Begin Text\n"
 	endText := "\nEnd Text"
 
-	chunkSize := 4096
+	chunkSize := API_MAX_CHARACTERS
 	if *bufferTextFlag {
 
 		startTextLen := utf8.RuneCountInString(startText)
@@ -207,29 +254,36 @@ func readFileData(inputFile string) []string {
 	}
 
 	var chunks []string
-	inputString := string(inputContent)
+	inputRunes := []rune(string(inputContent))
 
-	for len(inputString) > 0 {
-		if utf8.RuneCountInString(inputString) <= chunkSize {
+	for len(inputRunes) > 0 {
+		if len(inputRunes) <= chunkSize {
+			chunk := string(inputRunes)
 			if *bufferTextFlag {
-				chunks = append(chunks, startText+inputString+endText)
+				chunks = append(chunks, startText+chunk+endText)
 				break
 			}
-			chunks = append(chunks, inputString)
+			chunks = append(chunks, chunk)
 			break
 		}
 		splitIndex := chunkSize
-		for ; splitIndex > 0 && !unicode.IsSpace(rune(inputString[splitIndex])); splitIndex-- {
+		for ; splitIndex > 0 && !unicode.IsSpace(inputRunes[splitIndex]); splitIndex-- {
 		}
+		chunk := string(inputRunes[:splitIndex])
 		if *bufferTextFlag {
-			chunks = append(chunks, startText+inputString[:splitIndex]+endText)
+			chunks = append(chunks, startText+chunk+endText)
 		} else {
-			chunks = append(chunks, inputString[:splitIndex])
+			chunks = append(chunks, chunk)
 		}
-		inputString = strings.TrimSpace(inputString[splitIndex:])
+		inputRunes = inputRunes[splitIndex:]
 	}
 
 	return chunks
+}
+
+func isCommandAvailable(name string) bool {
+	_, err := exec.LookPath(name)
+	return err == nil
 }
 
 func tts(ttsRequest TTSRequest, outputFile string) {
@@ -249,10 +303,7 @@ func tts(ttsRequest TTSRequest, outputFile string) {
 func makeHttpRequest(req *http.Request, outputFile string) {
 	client := &http.Client{Timeout: 90 * time.Second}
 	resp, err := client.Do(req)
-	if err != nil {
-		log.Printf("Error sending request to OpenAI API: %v", err)
-		return
-	}
+	checkFatalErrorExists("Error: Unable to send request to OpenAI API", err)
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
@@ -262,19 +313,14 @@ func makeHttpRequest(req *http.Request, outputFile string) {
 	}
 
 	outputFileData, err := os.Create(outputFile)
-	if err != nil {
-		log.Printf("Error creating output file: %v", err)
-		return
-	}
+
+	checkFatalErrorExists("Error: Unable to create output file", err)
 	defer outputFileData.Close()
 
 	_, err = io.Copy(outputFileData, resp.Body)
-	if err != nil {
-		log.Printf("Error saving audio file: %v", err)
-		return
-	}
+	checkFatalErrorExists("Error: Unable to write to output file", err)
 
-	fmt.Printf("Audio file saved successfully: %s\n", outputFile)
+	log.Printf("Audio file saved successfully: %s\n", outputFile)
 }
 
 func printHelp() {
@@ -302,5 +348,5 @@ Options:
 Example:
   tts -f input.md -o output.mp3
 `
-	fmt.Println(help)
+	log.Print(help)
 }
