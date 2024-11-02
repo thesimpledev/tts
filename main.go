@@ -58,7 +58,7 @@ const (
 	defaultModel       = "tts-1-hd"
 	defaultFormat      = "mp3"
 	defaultSpeed       = "1.0"
-	version            = "v1.3.2"
+	Version            = "v1.3.2"
 	tool               = "tts"
 	API_MAX_CHARACTERS = 4096
 	API_URL            = "https://api.openai.com/v1/audio/speech"
@@ -148,14 +148,13 @@ func parseFlags() Flags {
 func handleFlags(flags Flags, config *Config) (bool, error) {
 	switch {
 	case flags.HelpFlag:
-		printHelp()
+		log.Print(printHelp())
 		return true, nil
 	case flags.ConfigureMode:
 		config.writeNewConfig()
 		return true, nil
 	case flags.VersionFlag:
-		versionInformation := printVersion(tool, version)
-		log.Print(versionInformation)
+		log.Print(printVersion(tool, Version))
 		return true, nil
 	default:
 		if flags.InputFile == "" || flags.OutputFile == "" {
@@ -499,8 +498,8 @@ func cleanupFiles(files []string) error {
 	return nil
 }
 
-func printHelp() {
-	help := `Usage: tts [OPTIONS]
+func printHelp() string {
+	return `Usage: tts [OPTIONS]
 
 Process text files with OpenAI's Text To Speech API.
 
@@ -524,10 +523,9 @@ Options:
 Example:
   tts -f input.md -o output.mp3
 `
-	log.Print(help)
 }
 
-func printVersion(tool string, version string) string {
+func printVersion(tool, version string) string {
 	return fmt.Sprintf(`%s: Version %s
 
 Copyright 2024 The Simple Dev
@@ -535,7 +533,7 @@ Copyright 2024 The Simple Dev
 Author:         Steven Stanton
 License:        MIT - No Warranty
 Author Github:  https//github.com/StevenDStanton
-Project Github: https://github.com/StevemStanton/cli-tools-for-windows
+Project Github: https://github.com/StevenStanton/tts
 
 Part of my CLI Tools for Windows project.`, tool, version)
 }

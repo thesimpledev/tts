@@ -370,3 +370,21 @@ func TestCombineFiles(t *testing.T) {
 		t.Logf("Expected error due to missing ffmpeg, got: %v", err)
 	}
 }
+
+func TestPrintVersion(t *testing.T) {
+	expectedOutput := fmt.Sprintf(`%s: Version %s
+
+Copyright 2024 The Simple Dev
+
+Author:         Steven Stanton
+License:        MIT - No Warranty
+Author Github:  https//github.com/StevenDStanton
+Project Github: https://github.com/StevenStanton/tts
+
+Part of my CLI Tools for Windows project.`, tool, Version)
+
+	output := printVersion(tool, Version)
+	if output != expectedOutput {
+		t.Errorf("Expected version output:\n%s\nGot:\n%s", expectedOutput, output)
+	}
+}
