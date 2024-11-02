@@ -58,7 +58,7 @@ const (
 	defaultModel       = "tts-1-hd"
 	defaultFormat      = "mp3"
 	defaultSpeed       = "1.0"
-	version            = "v1.3.0"
+	version            = "v1.3.2"
 	tool               = "tts"
 	API_MAX_CHARACTERS = 4096
 	API_URL            = "https://api.openai.com/v1/audio/speech"
