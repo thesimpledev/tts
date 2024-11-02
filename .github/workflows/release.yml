@@ -27,21 +27,21 @@ jobs:
         run: |
           mkdir -p bin
           # Build for Windows
-          GOOS=windows GOARCH=amd64 go build -o bin/main.exe main.go
+          GOOS=windows GOARCH=amd64 go build -o bin/tts.exe main.go
           # Build for Linux
-          GOOS=linux GOARCH=amd64 go build -o bin/main main.go
+          GOOS=linux GOARCH=amd64 go build -o bin/tts main.go
 
       - name: Archive build output for Windows
         run: |
           mkdir -p artifacts/windows
-          mv bin/main.exe artifacts/windows/
+          mv bin/tts.exe artifacts/windows/
           cd artifacts/windows
           zip -r ../../bin/tts-windows-amd64.zip *
 
       - name: Archive build output for Linux
         run: |
           mkdir -p artifacts/linux
-          mv bin/main artifacts/linux/
+          mv bin/tts artifacts/linux/
           cd artifacts/linux
           tar -czvf ../../bin/tts-linux-amd64.tar.gz *
 

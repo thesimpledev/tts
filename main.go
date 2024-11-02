@@ -54,7 +54,7 @@ const (
 	defaultModel       = "tts-1-hd"
 	defaultFormat      = "mp3"
 	defaultSpeed       = "1.0"
-	version            = "v1.2.5"
+	version            = "v1.2.6"
 	tool               = "tts"
 	API_MAX_CHARACTERS = 4096
 )
