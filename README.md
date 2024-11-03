@@ -1,10 +1,24 @@
+# TTS CLI Tool
+
 ## Overview
 
-This project is a continuation of my previous [Linux Tools for Windows](https://github.com/StevenDStanton/cli-tools-for-windows) initiative, aimed at bringing Linux CLI tools to Windows. The previous project was archived due to me switching from Windows to Linux for my daily driver OS. This project will include new tools I need moving forward.
+This project provides a streamlined CLI tool to convert text files, including Markdown, into speech using the OpenAI API. Initially part of a broader CLI tools project, it has now been refined to focus on text-to-speech functionality.
 
-## Tools Included
+## Setup
 
-- tts: Converts text files to speech using the OpenAI API.
+Upon first use, you’ll be prompted to enter your OpenAI API key. Alternatively, you can enter configuration mode to set up or modify the API key by running:
+
+```bash
+tts --configure
+```
+
+## Features
+
+- TTS Conversion: Reads a text or Markdown file, converts it to speech using OpenAI's API, and saves it as an audio file.
+- Customizable Voice and Model: Choose from different voice options and TTS models to match your preferred audio style.
+- Flexible Output: Supports multiple audio formats, including MP3, WAV, FLAC, and more.
+- Adjustable Speed: Control audio playback speed, from slow-paced narration to faster speech.
+- File Combination: Optionally combine multiple text files into a single audio file.
 
 ## To Do
 
@@ -19,8 +33,6 @@ A simple CLI tool for converting text files to speech using the OpenAI API. The 
 ```bash
 Usage: tts [OPTIONS]
 
-Process text files with OpenAI's Text To Speech API.
-
 Options:
   -f FILE       Input Markdown file
   -o FILE       Output audio file
@@ -34,8 +46,9 @@ Options:
                 Range: 0.25 to 4.0
   -b            Place buffer words at start and end of text
   -r RATE       Rate limit for API calls per minute (default: unlimited)
+  -c            Combine multiple text files into a single audio file
   --configure   Enter configuration mode for API key setup
-  --help        Display this help and exit
+  --help        Display help and exit
   --version     Output version information and exit
 
 Example:
@@ -46,15 +59,7 @@ Example:
 
 ### Status
 
-Testing is not yet currently implemented.
-
-Notes: Need to make sure each file has a test file matching it so it reports the correct value or need to fix how the flow is checking coverage
-
-[![Coverage Status](https://coveralls.io/repos/github/StevenDStanton/cli-tools/badge.svg?branch=master)](https://coveralls.io/github/StevenDStanton/cli-tools?branch=master)
-
-I have written all tests to use Fuzz. However, this is not set up in the pipeline due to how expensive those tests are to run.
-
-[Fuzz Testing](https://go.dev/doc/security/fuzz/)
+[![Coverage Status](https://coveralls.io/repos/github/StevenDStanton/tts/badge.svg?branch=master)](https://coveralls.io/github/StevenDStanton/tts?branch=master)
 
 ### Running Tests
 
