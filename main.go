@@ -65,11 +65,9 @@ const (
 )
 
 func main() {
-
 	if err := run(); err != nil {
 		log.Fatalf("Error: %v", err)
 	}
-
 }
 
 func run() error {

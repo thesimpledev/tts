@@ -388,3 +388,34 @@ Part of my CLI Tools for Windows project.`, tool, Version)
 		t.Errorf("Expected version output:\n%s\nGot:\n%s", expectedOutput, output)
 	}
 }
+
+func TestPrintHelp(t *testing.T) {
+	expectedHelp := `Usage: tts [OPTIONS]
+
+Process text files with OpenAI's Text To Speech API.
+
+Options:
+  -f FILE       Input Markdown file
+  -o FILE       Output audio file
+  -v VOICE      Voice selection (default: nova)
+                Options: alloy, echo, fable, onyx, nova, shimmer
+  -m MODEL      Model selection (default: tts-1-hd)
+                Options: tts-1, tts-1-hd
+  -fmt FORMAT   Output format (default: mp3)
+                Options: mp3, opus, aac, flac, wav, pcm
+  -s SPEED      Set audio speed (default: 1.0)
+                Range: 0.25 to 4.0
+  -b            Place buffer words at start and end of text
+  -r RATE       Rate limit for API calls per minute (default: unlimited)
+  --configure   Enter configuration mode for API key setup
+  --help        Display this help and exit
+  --version     Output version information and exit
+
+Example:
+  tts -f input.md -o output.mp3
+`
+	output := printHelp()
+	if output != expectedHelp {
+		t.Errorf("Expected help output:\n%s\nGot:\n%s", expectedHelp, output)
+	}
+}
