@@ -302,12 +302,14 @@ func splitIntoChunks(text string, chunkSize int) []string {
 			chunks = append(chunks, string(inputRunes))
 			break
 		}
+
 		splitIndex := chunkSize
 		for ; splitIndex > 0 && !unicode.IsSpace(inputRunes[splitIndex]); splitIndex-- {
 		}
 		if splitIndex == 0 {
 			splitIndex = chunkSize // If no space found, force split
 		}
+
 		chunks = append(chunks, string(inputRunes[:splitIndex]))
 		inputRunes = inputRunes[splitIndex:]
 	}
