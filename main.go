@@ -18,6 +18,19 @@ import (
 	"unicode/utf8"
 )
 
+const (
+	config_file    = "tts.config"
+	config_dir     = ".cli-tools"
+	default_voice  = "nova"
+	default_model  = "tts-1-hd"
+	default_format = "mp3"
+	default_speed  = "1.0"
+	version        = "v1.3.2"
+	tool           = "tts"
+	api_max_chars  = 4096
+	api_url        = "https://api.openai.com/v1/audio/speech"
+)
+
 type TTSRequest struct {
 	Model  string `json:"model"`
 	Input  string `json:"input"`
@@ -50,19 +63,6 @@ type Flags struct {
 type HTTPClient interface {
 	Do(req *http.Request) (*http.Response, error)
 }
-
-const (
-	config_file    = "tts.config"
-	config_dir     = ".cli-tools"
-	default_voice  = "nova"
-	default_model  = "tts-1-hd"
-	default_format = "mp3"
-	default_speed  = "1.0"
-	version        = "v1.3.2"
-	tool           = "tts"
-	api_max_chars  = 4096
-	api_url        = "https://api.openai.com/v1/audio/speech"
-)
 
 func main() {
 	if err := run(); err != nil {
@@ -120,6 +120,174 @@ func run() error {
 		}
 	}
 
+	return nil
+}
+
+func tts(ttsRequest TTSRequest, output io.Writer, client HTTPClient, config Config) error {
+	requestBody, err := json.Marshal(ttsRequest)
+	if err != nil {
+		return fmt.Errorf("unable to create request payload: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", api_url, bytes.NewBuffer(requestBody))
+	if err != nil {
+		return fmt.Errorf("unable to create HTTP request: %w", err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+config.OpenAIAPIKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("unable to send request to OpenAI API: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		responseBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("OpenAI API request failed with status code: %d, response body: %s", resp.StatusCode, responseBody)
+	}
+
+	_, err = io.Copy(output, resp.Body)
+	if err != nil {
+		return fmt.Errorf("unable to write to output: %w", err)
+	}
+
+	log.Printf("Audio data processed successfully.\n")
+	return nil
+
+}
+
+func calculateChunkSize(bufferText bool) int {
+	chunkSize := api_max_chars
+	if bufferText {
+		startText := "Begin Text\n"
+		endText := "\nEnd Text"
+		startTextLen := utf8.RuneCountInString(startText)
+		endTextLen := utf8.RuneCountInString(endText)
+		chunkSize -= (startTextLen + endTextLen)
+	}
+	return chunkSize
+}
+
+func splitIntoChunks(text string, chunkSize int) []string {
+	var chunks []string
+	inputRunes := []rune(text)
+
+	for len(inputRunes) > 0 {
+		if len(inputRunes) <= chunkSize {
+			chunks = append(chunks, string(inputRunes))
+			break
+		}
+
+		splitIndex := chunkSize
+		for ; splitIndex > 0 && !unicode.IsSpace(inputRunes[splitIndex]); splitIndex-- {
+		}
+		if splitIndex == 0 {
+			splitIndex = chunkSize // If no space found, force split
+		}
+
+		chunks = append(chunks, string(inputRunes[:splitIndex]))
+		inputRunes = inputRunes[splitIndex:]
+	}
+
+	return chunks
+}
+
+func addBufferText(chunks []string) []string {
+	startText := "Begin Text\n"
+	endText := "\nEnd Text"
+	for i, chunk := range chunks {
+		chunks[i] = startText + chunk + endText
+	}
+	return chunks
+}
+
+func processChunk(ttsRequest TTSRequest, outputFileName string, client HTTPClient, config Config) error {
+	outputFileData, err := os.Create(outputFileName)
+	if err != nil {
+		return fmt.Errorf("unable to create output file: %w", err)
+	}
+	defer outputFileData.Close()
+
+	err = tts(ttsRequest, outputFileData, client, config)
+	if err != nil {
+		return fmt.Errorf("unable to process audio data: %w", err)
+	}
+
+	return nil
+}
+
+func processChunks(chunks []string, flags Flags, config Config, createdFiles *[]string) error {
+	multiFile := len(chunks) > 1
+	httpClient := &http.Client{Timeout: 90 * time.Second}
+	var textFileName string
+
+	if flags.CombineFiles && multiFile {
+		textFileName = fmt.Sprintf("%s.txt", strings.TrimSuffix(flags.OutputFile, filepath.Ext(flags.OutputFile)))
+		*createdFiles = append(*createdFiles, textFileName)
+	}
+
+	for i, chunk := range chunks {
+		outputFileName := flags.OutputFile
+		if multiFile {
+			outputFileName = fmt.Sprintf("%s_%d.%s", strings.TrimSuffix(flags.OutputFile, filepath.Ext(flags.OutputFile)), i+1, flags.FormatOption)
+			*createdFiles = append(*createdFiles, outputFileName)
+
+			if flags.CombineFiles {
+				if err := appendToTextFile(textFileName, outputFileName); err != nil {
+					return err
+				}
+			}
+		}
+
+		ttsRequest := TTSRequest{
+			Model:  flags.ModelOption,
+			Voice:  flags.VoiceOption,
+			Format: flags.FormatOption,
+			Input:  chunk,
+			Speed:  flags.SpeedOption,
+		}
+
+		if flags.RateLimit > 0 {
+			<-config.rateLimiter
+		}
+
+		if err := processChunk(ttsRequest, outputFileName, httpClient, config); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func appendToTextFile(textFileName, outputFileName string) error {
+	file, err := os.OpenFile(textFileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return fmt.Errorf("unable to open text file: %w", err)
+	}
+	defer file.Close()
+
+	_, err = file.WriteString(fmt.Sprintf("file '%s'\n", outputFileName))
+	if err != nil {
+		return fmt.Errorf("unable to write to text file: %w", err)
+	}
+	return nil
+}
+
+func combineFiles(flags Flags, createdFiles []string) error {
+	textFileName := fmt.Sprintf("%s.txt", strings.TrimSuffix(flags.OutputFile, filepath.Ext(flags.OutputFile)))
+
+	cmd := exec.Command("ffmpeg", "-f", "concat", "-safe", "0", "-i", textFileName, "-c", "copy", flags.OutputFile)
+
+	err := cmd.Run()
+	if err != nil {
+		return fmt.Errorf("unable to combine files: %w", err)
+	}
+
+	if err := cleanupFiles(createdFiles); err != nil {
+		log.Printf("Cleanup completed with errors:\n%v", err)
+	}
 	return nil
 }
 
@@ -281,49 +449,14 @@ func readFileData(r io.Reader, bufferText bool) ([]string, error) {
 	return chunks, nil
 }
 
-func calculateChunkSize(bufferText bool) int {
-	chunkSize := api_max_chars
-	if bufferText {
-		startText := "Begin Text\n"
-		endText := "\nEnd Text"
-		startTextLen := utf8.RuneCountInString(startText)
-		endTextLen := utf8.RuneCountInString(endText)
-		chunkSize -= (startTextLen + endTextLen)
+func promptForConfirmation(numFiles int) (bool, error) {
+	log.Printf("This will create %d files. Are you sure you wish to continue? (y/n): ", numFiles)
+	var response string
+	fmt.Scanln(&response)
+	if strings.ToLower(strings.TrimSpace(response)) != "y" {
+		return false, nil
 	}
-	return chunkSize
-}
-
-func splitIntoChunks(text string, chunkSize int) []string {
-	var chunks []string
-	inputRunes := []rune(text)
-
-	for len(inputRunes) > 0 {
-		if len(inputRunes) <= chunkSize {
-			chunks = append(chunks, string(inputRunes))
-			break
-		}
-
-		splitIndex := chunkSize
-		for ; splitIndex > 0 && !unicode.IsSpace(inputRunes[splitIndex]); splitIndex-- {
-		}
-		if splitIndex == 0 {
-			splitIndex = chunkSize // If no space found, force split
-		}
-
-		chunks = append(chunks, string(inputRunes[:splitIndex]))
-		inputRunes = inputRunes[splitIndex:]
-	}
-
-	return chunks
-}
-
-func addBufferText(chunks []string) []string {
-	startText := "Begin Text\n"
-	endText := "\nEnd Text"
-	for i, chunk := range chunks {
-		chunks[i] = startText + chunk + endText
-	}
-	return chunks
+	return true, nil
 }
 
 func checkPrerequisites(flags Flags) error {
@@ -347,142 +480,9 @@ func readInputFile(inputFileName string, bufferText bool) ([]string, error) {
 	return chunks, nil
 }
 
-func processChunks(chunks []string, flags Flags, config Config, createdFiles *[]string) error {
-	multiFile := len(chunks) > 1
-	httpClient := &http.Client{Timeout: 90 * time.Second}
-	var textFileName string
-
-	if flags.CombineFiles && multiFile {
-		textFileName = fmt.Sprintf("%s.txt", strings.TrimSuffix(flags.OutputFile, filepath.Ext(flags.OutputFile)))
-		*createdFiles = append(*createdFiles, textFileName)
-	}
-
-	for i, chunk := range chunks {
-		outputFileName := flags.OutputFile
-		if multiFile {
-			outputFileName = fmt.Sprintf("%s_%d.%s", strings.TrimSuffix(flags.OutputFile, filepath.Ext(flags.OutputFile)), i+1, flags.FormatOption)
-			*createdFiles = append(*createdFiles, outputFileName)
-
-			if flags.CombineFiles {
-				if err := appendToTextFile(textFileName, outputFileName); err != nil {
-					return err
-				}
-			}
-		}
-
-		ttsRequest := TTSRequest{
-			Model:  flags.ModelOption,
-			Voice:  flags.VoiceOption,
-			Format: flags.FormatOption,
-			Input:  chunk,
-			Speed:  flags.SpeedOption,
-		}
-
-		if flags.RateLimit > 0 {
-			<-config.rateLimiter
-		}
-
-		if err := processChunk(ttsRequest, outputFileName, httpClient, config); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func processChunk(ttsRequest TTSRequest, outputFileName string, client HTTPClient, config Config) error {
-	outputFileData, err := os.Create(outputFileName)
-	if err != nil {
-		return fmt.Errorf("unable to create output file: %w", err)
-	}
-	defer outputFileData.Close()
-
-	err = tts(ttsRequest, outputFileData, client, config)
-	if err != nil {
-		return fmt.Errorf("unable to process audio data: %w", err)
-	}
-
-	return nil
-}
-
-func appendToTextFile(textFileName, outputFileName string) error {
-	file, err := os.OpenFile(textFileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return fmt.Errorf("unable to open text file: %w", err)
-	}
-	defer file.Close()
-
-	_, err = file.WriteString(fmt.Sprintf("file '%s'\n", outputFileName))
-	if err != nil {
-		return fmt.Errorf("unable to write to text file: %w", err)
-	}
-	return nil
-}
-
-func combineFiles(flags Flags, createdFiles []string) error {
-	textFileName := fmt.Sprintf("%s.txt", strings.TrimSuffix(flags.OutputFile, filepath.Ext(flags.OutputFile)))
-
-	cmd := exec.Command("ffmpeg", "-f", "concat", "-safe", "0", "-i", textFileName, "-c", "copy", flags.OutputFile)
-
-	err := cmd.Run()
-	if err != nil {
-		return fmt.Errorf("unable to combine files: %w", err)
-	}
-
-	if err := cleanupFiles(createdFiles); err != nil {
-		log.Printf("Cleanup completed with errors:\n%v", err)
-	}
-	return nil
-}
-
-func promptForConfirmation(numFiles int) (bool, error) {
-	log.Printf("This will create %d files. Are you sure you wish to continue? (y/n): ", numFiles)
-	var response string
-	fmt.Scanln(&response)
-	if strings.ToLower(strings.TrimSpace(response)) != "y" {
-		return false, nil
-	}
-	return true, nil
-}
-
 var isCommandAvailable = func(name string) bool {
 	_, err := exec.LookPath(name)
 	return err == nil
-}
-
-func tts(ttsRequest TTSRequest, output io.Writer, client HTTPClient, config Config) error {
-	requestBody, err := json.Marshal(ttsRequest)
-	if err != nil {
-		return fmt.Errorf("unable to create request payload: %w", err)
-	}
-
-	req, err := http.NewRequest("POST", api_url, bytes.NewBuffer(requestBody))
-	if err != nil {
-		return fmt.Errorf("unable to create HTTP request: %w", err)
-	}
-
-	req.Header.Set("Authorization", "Bearer "+config.OpenAIAPIKey)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("unable to send request to OpenAI API: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		responseBody, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("OpenAI API request failed with status code: %d, response body: %s", resp.StatusCode, responseBody)
-	}
-
-	_, err = io.Copy(output, resp.Body)
-	if err != nil {
-		return fmt.Errorf("unable to write to output: %w", err)
-	}
-
-	log.Printf("Audio data processed successfully.\n")
-	return nil
-
 }
 
 func cleanupFiles(files []string) error {
