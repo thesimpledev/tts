@@ -18,7 +18,7 @@ import (
 
 func TestCalculateChunkSize(t *testing.T) {
 	chunkSize := calculateChunkSize(false)
-	expectedSize := API_MAX_CHARACTERS
+	expectedSize := api_max_chars
 	if chunkSize != expectedSize {
 		t.Errorf("Expected chunk size %d, got %d", expectedSize, chunkSize)
 	}
@@ -27,7 +27,7 @@ func TestCalculateChunkSize(t *testing.T) {
 	endText := "\nEnd Text"
 	startTextLen := utf8.RuneCountInString(startText)
 	endTextLen := utf8.RuneCountInString(endText)
-	expectedSizeWithBuffer := API_MAX_CHARACTERS - (startTextLen + endTextLen)
+	expectedSizeWithBuffer := api_max_chars - (startTextLen + endTextLen)
 	if chunkSizeWithBuffer != expectedSizeWithBuffer {
 		t.Errorf("Expected chunk size with buffer %d, got %d", expectedSizeWithBuffer, chunkSizeWithBuffer)
 	}
@@ -130,8 +130,8 @@ func TestTTS(t *testing.T) {
 			if req.Method != "POST" {
 				t.Errorf("Expected POST method, got %s", req.Method)
 			}
-			if req.URL.String() != API_URL {
-				t.Errorf("Expected URL %s, got %s", API_URL, req.URL.String())
+			if req.URL.String() != api_url {
+				t.Errorf("Expected URL %s, got %s", api_url, req.URL.String())
 			}
 			response := &http.Response{
 				StatusCode: http.StatusOK,
@@ -308,8 +308,8 @@ func TestGetConfigPath(t *testing.T) {
 	if err != nil {
 		t.Errorf("Expected no error, got %v", err)
 	}
-	if !strings.Contains(path, CONFIG_DIR) || !strings.HasSuffix(path, CONFIG_FILE) {
-		t.Errorf("Expected path to contain '%s' and end with '%s', got '%s'", CONFIG_DIR, CONFIG_FILE, path)
+	if !strings.Contains(path, config_dir) || !strings.HasSuffix(path, config_file) {
+		t.Errorf("Expected path to contain '%s' and end with '%s', got '%s'", config_dir, config_file, path)
 	}
 }
 
@@ -381,9 +381,9 @@ License:        MIT - No Warranty
 Author Github:  https//github.com/StevenDStanton
 Project Github: https://github.com/StevenStanton/tts
 
-Part of my CLI Tools for Windows project.`, tool, Version)
+Part of my CLI Tools for Windows project.`, tool, version)
 
-	output := printVersion(tool, Version)
+	output := printVersion(tool, version)
 	if output != expectedOutput {
 		t.Errorf("Expected version output:\n%s\nGot:\n%s", expectedOutput, output)
 	}

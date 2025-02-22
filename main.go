@@ -52,16 +52,16 @@ type HTTPClient interface {
 }
 
 const (
-	CONFIG_FILE        = "tts.config"
-	CONFIG_DIR         = ".cli-tools"
-	defaultVoice       = "nova"
-	defaultModel       = "tts-1-hd"
-	defaultFormat      = "mp3"
-	defaultSpeed       = "1.0"
-	Version            = "v1.3.2"
-	tool               = "tts"
-	API_MAX_CHARACTERS = 4096
-	API_URL            = "https://api.openai.com/v1/audio/speech"
+	config_file    = "tts.config"
+	config_dir     = ".cli-tools"
+	default_voice  = "nova"
+	default_model  = "tts-1-hd"
+	default_format = "mp3"
+	default_speed  = "1.0"
+	version        = "v1.3.2"
+	tool           = "tts"
+	api_max_chars  = 4096
+	api_url        = "https://api.openai.com/v1/audio/speech"
 )
 
 func main() {
@@ -128,10 +128,10 @@ func parseFlags() Flags {
 
 	flag.StringVar(&flags.InputFile, "f", "", "Input Markdown file")
 	flag.StringVar(&flags.OutputFile, "o", "", "Output audio file")
-	flag.StringVar(&flags.VoiceOption, "v", defaultVoice, "Voice Selection")
-	flag.StringVar(&flags.ModelOption, "m", defaultModel, "Model Selection")
-	flag.StringVar(&flags.FormatOption, "fmt", defaultFormat, "Select output format")
-	flag.StringVar(&flags.SpeedOption, "s", defaultSpeed, "Set audio speed")
+	flag.StringVar(&flags.VoiceOption, "v", default_voice, "Voice Selection")
+	flag.StringVar(&flags.ModelOption, "m", default_model, "Model Selection")
+	flag.StringVar(&flags.FormatOption, "fmt", default_format, "Select output format")
+	flag.StringVar(&flags.SpeedOption, "s", default_speed, "Set audio speed")
 	flag.BoolVar(&flags.ConfigureMode, "configure", false, "Enter Configuration Mode")
 	flag.BoolVar(&flags.HelpFlag, "help", false, "Displays Help Menu")
 	flag.BoolVar(&flags.VersionFlag, "version", false, "Displays version information")
@@ -152,7 +152,7 @@ func handleFlags(flags Flags, config *Config) (bool, error) {
 		config.writeNewConfig()
 		return true, nil
 	case flags.VersionFlag:
-		log.Print(printVersion(tool, Version))
+		log.Print(printVersion(tool, version))
 		return true, nil
 	default:
 		if flags.InputFile == "" || flags.OutputFile == "" {
@@ -182,7 +182,8 @@ func (c *Config) configure(ratelimit int) error {
 	}
 
 	if ratelimit > 0 {
-		c.rateLimiter = time.Tick(time.Minute / time.Duration(ratelimit))
+		ticker := time.NewTicker(time.Minute / time.Duration(ratelimit))
+		c.rateLimiter = ticker.C
 	}
 
 	return nil
@@ -194,14 +195,14 @@ func getConfigPath() (string, error) {
 		return "", fmt.Errorf("unable to get user home directory: %w", err)
 	}
 
-	configDir := filepath.Join(home, CONFIG_DIR)
+	configDir := filepath.Join(home, config_dir)
 
 	err = os.MkdirAll(configDir, 0755)
 	if err != nil {
 		return "", fmt.Errorf("unable to create config directory: %w", err)
 	}
 
-	configFilePath := filepath.Join(configDir, CONFIG_FILE)
+	configFilePath := filepath.Join(configDir, config_file)
 
 	return configFilePath, nil
 
@@ -241,14 +242,15 @@ func (c *Config) readConfig() error {
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		line := scanner.Text()
-		parts := strings.SplitN(line, "=", 2)
-		if len(parts) == 2 {
-			key := strings.TrimSpace(parts[0])
-			value := strings.TrimSpace(parts[1])
+		key, value, found := strings.Cut(line, "=")
+		if found {
+			key = strings.TrimSpace(key)
+			value = strings.TrimSpace(value)
 			if key == "OPENAI_API_KEY" {
 				c.OpenAIAPIKey = value
 			}
 		}
+
 	}
 
 	if err := scanner.Err(); err != nil {
@@ -280,7 +282,7 @@ func readFileData(r io.Reader, bufferText bool) ([]string, error) {
 }
 
 func calculateChunkSize(bufferText bool) int {
-	chunkSize := API_MAX_CHARACTERS
+	chunkSize := api_max_chars
 	if bufferText {
 		startText := "Begin Text\n"
 		endText := "\nEnd Text"
@@ -300,12 +302,14 @@ func splitIntoChunks(text string, chunkSize int) []string {
 			chunks = append(chunks, string(inputRunes))
 			break
 		}
+
 		splitIndex := chunkSize
 		for ; splitIndex > 0 && !unicode.IsSpace(inputRunes[splitIndex]); splitIndex-- {
 		}
 		if splitIndex == 0 {
 			splitIndex = chunkSize // If no space found, force split
 		}
+
 		chunks = append(chunks, string(inputRunes[:splitIndex]))
 		inputRunes = inputRunes[splitIndex:]
 	}
@@ -452,7 +456,7 @@ func tts(ttsRequest TTSRequest, output io.Writer, client HTTPClient, config Conf
 		return fmt.Errorf("unable to create request payload: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", API_URL, bytes.NewBuffer(requestBody))
+	req, err := http.NewRequest("POST", api_url, bytes.NewBuffer(requestBody))
 	if err != nil {
 		return fmt.Errorf("unable to create HTTP request: %w", err)
 	}
