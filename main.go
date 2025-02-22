@@ -182,7 +182,8 @@ func (c *Config) configure(ratelimit int) error {
 	}
 
 	if ratelimit > 0 {
-		c.rateLimiter = time.Tick(time.Minute / time.Duration(ratelimit))
+		ticker := time.NewTicker(time.Minute / time.Duration(ratelimit))
+		c.rateLimiter = ticker.C
 	}
 
 	return nil
