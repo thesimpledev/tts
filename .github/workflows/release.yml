@@ -46,13 +46,13 @@ jobs:
           tar -czvf ../../bin/tts-linux-amd64.tar.gz *
 
       - name: Upload Windows artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: tts-windows-amd64
           path: bin/tts-windows-amd64.zip
 
       - name: Upload Linux artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: tts-linux-amd64
           path: bin/tts-linux-amd64.tar.gz
@@ -64,13 +64,13 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.PAT }}
     steps:
       - name: Download Windows artifact
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: tts-windows-amd64
           path: ./bin
 
       - name: Download Linux artifact
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: tts-linux-amd64
           path: ./bin
