@@ -155,7 +155,6 @@ func tts(ttsRequest TTSRequest, output io.Writer, client HTTPClient, config Conf
 
 	log.Printf("Audio data processed successfully.\n")
 	return nil
-
 }
 
 func calculateChunkSize(bufferText bool) int {
@@ -262,13 +261,13 @@ func processChunks(chunks []string, flags Flags, config Config, createdFiles *[]
 }
 
 func appendToTextFile(textFileName, outputFileName string) error {
-	file, err := os.OpenFile(textFileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	file, err := os.OpenFile(textFileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
 		return fmt.Errorf("unable to open text file: %w", err)
 	}
 	defer file.Close()
 
-	_, err = file.WriteString(fmt.Sprintf("file '%s'\n", outputFileName))
+	_, err = fmt.Fprintf(file, "file '%s'\n", outputFileName)
 	if err != nil {
 		return fmt.Errorf("unable to write to text file: %w", err)
 	}
@@ -278,11 +277,19 @@ func appendToTextFile(textFileName, outputFileName string) error {
 func combineFiles(flags Flags, createdFiles []string) error {
 	textFileName := fmt.Sprintf("%s.txt", strings.TrimSuffix(flags.OutputFile, filepath.Ext(flags.OutputFile)))
 
-	cmd := exec.Command("ffmpeg", "-f", "concat", "-safe", "0", "-i", textFileName, "-c", "copy", flags.OutputFile)
-
-	err := cmd.Run()
+	absTextFile, err := filepath.Abs(textFileName)
 	if err != nil {
-		return fmt.Errorf("unable to combine files: %w", err)
+		return fmt.Errorf("unable to get absolute path for the output file: %w", err)
+	}
+
+	cmd := exec.Command("ffmpeg", "-f", "concat", "-safe", "0", "-i", absTextFile, "-c", "copy", flags.OutputFile)
+
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
+	err = cmd.Run()
+	if err != nil {
+		return fmt.Errorf("unable to combine files: %w, stdErr: %s", err, stderr.String())
 	}
 
 	if err := cleanupFiles(createdFiles); err != nil {
@@ -332,7 +339,6 @@ func handleFlags(flags Flags, config *Config) (bool, error) {
 }
 
 func (c *Config) configure(ratelimit int) error {
-
 	configPath, err := getConfigPath()
 	if err != nil {
 		return fmt.Errorf("unable to get config path: %w", err)
@@ -365,7 +371,7 @@ func getConfigPath() (string, error) {
 
 	configDir := filepath.Join(home, config_dir)
 
-	err = os.MkdirAll(configDir, 0755)
+	err = os.MkdirAll(configDir, 0o755)
 	if err != nil {
 		return "", fmt.Errorf("unable to create config directory: %w", err)
 	}
@@ -373,7 +379,6 @@ func getConfigPath() (string, error) {
 	configFilePath := filepath.Join(configDir, config_file)
 
 	return configFilePath, nil
-
 }
 
 func (c *Config) writeNewConfig() error {
@@ -383,7 +388,7 @@ func (c *Config) writeNewConfig() error {
 	}
 	c.OpenAIAPIKey = apiKey
 	fileData := "OPENAI_API_KEY=" + c.OpenAIAPIKey
-	err = os.WriteFile(c.configPath, []byte(fileData), 0600)
+	err = os.WriteFile(c.configPath, []byte(fileData), 0o600)
 	if err != nil {
 		return fmt.Errorf("unable to write config file: %w", err)
 	}
@@ -430,7 +435,6 @@ func (c *Config) readConfig() error {
 	}
 
 	return nil
-
 }
 
 func readFileData(r io.Reader, bufferText bool) ([]string, error) {
