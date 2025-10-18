@@ -222,7 +222,7 @@ func TestCleanupFiles(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to create temporary file %s: %v", file, err)
 		}
-		f.Close()
+		_ = f.Close()
 	}
 	err := cleanupFiles(files)
 	if err != nil {
@@ -249,7 +249,10 @@ func TestCleanupFiles_Error(t *testing.T) {
 
 func TestAppendToTextFile(t *testing.T) {
 	textFileName := "test_append.txt"
-	defer os.Remove(textFileName)
+	defer func() {
+		_ = os.Remove(textFileName)
+	}()
+
 	err := appendToTextFile(textFileName, "output1.mp3")
 	if err != nil {
 		t.Errorf("Expected no error, got %v", err)
@@ -289,7 +292,9 @@ func TestProcessChunk(t *testing.T) {
 		OpenAIAPIKey: "test-api-key",
 	}
 	outputFileName := "test_output.mp3"
-	defer os.Remove(outputFileName)
+	defer func() {
+		_ = os.Remove(outputFileName)
+	}()
 	err := processChunk(ttsRequest, outputFileName, mockClient, config)
 	if err != nil {
 		t.Errorf("Expected no error, got %v", err)
@@ -340,7 +345,9 @@ func TestReadInputFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to write input file: %v", err)
 	}
-	defer os.Remove(inputFileName)
+	defer func() {
+		_ = os.Remove(inputFileName)
+	}()
 	chunks, err := readInputFile(inputFileName, false)
 	if err != nil {
 		t.Errorf("Expected no error, got %v", err)
@@ -364,7 +371,9 @@ func TestCombineFiles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create text file: %v", err)
 	}
-	defer os.Remove(textFileName)
+	defer func() {
+		_ = os.Remove(textFileName)
+	}()
 	err = combineFiles(flags, createdFiles)
 	if err != nil {
 		t.Logf("Expected error due to missing ffmpeg, got: %v", err)

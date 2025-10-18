@@ -141,7 +141,9 @@ func tts(ttsRequest TTSRequest, output io.Writer, client HTTPClient, config Conf
 	if err != nil {
 		return fmt.Errorf("unable to send request to OpenAI API: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		responseBody, _ := io.ReadAll(resp.Body)
@@ -207,7 +209,9 @@ func processChunk(ttsRequest TTSRequest, outputFileName string, client HTTPClien
 	if err != nil {
 		return fmt.Errorf("unable to create output file: %w", err)
 	}
-	defer outputFileData.Close()
+	defer func() {
+		_ = outputFileData.Close()
+	}()
 
 	err = tts(ttsRequest, outputFileData, client, config)
 	if err != nil {
@@ -265,7 +269,9 @@ func appendToTextFile(textFileName, outputFileName string) error {
 	if err != nil {
 		return fmt.Errorf("unable to open text file: %w", err)
 	}
-	defer file.Close()
+	defer func() {
+		_ = file.Close()
+	}()
 
 	_, err = fmt.Fprintf(file, "file '%s'\n", outputFileName)
 	if err != nil {
@@ -324,7 +330,10 @@ func handleFlags(flags Flags, config *Config) (bool, error) {
 		log.Print(printHelp())
 		return true, nil
 	case flags.ConfigureMode:
-		config.writeNewConfig()
+		err := config.writeNewConfig()
+		if err != nil {
+			return false, fmt.Errorf("unable to write new config: %w", err)
+		}
 		return true, nil
 	case flags.VersionFlag:
 		log.Print(printVersion(tool, version))
@@ -410,7 +419,9 @@ func (c *Config) readConfig() error {
 	if err != nil {
 		return fmt.Errorf("unable to open config file: %w", err)
 	}
-	defer file.Close()
+	defer func() {
+		_ = file.Close()
+	}()
 
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
@@ -431,7 +442,10 @@ func (c *Config) readConfig() error {
 	}
 
 	if c.OpenAIAPIKey == "" {
-		c.writeNewConfig()
+		err := c.writeNewConfig()
+		if err != nil {
+			return fmt.Errorf("unable to write new config")
+		}
 	}
 
 	return nil
@@ -456,7 +470,11 @@ func readFileData(r io.Reader, bufferText bool) ([]string, error) {
 func promptForConfirmation(numFiles int) (bool, error) {
 	log.Printf("This will create %d files. Are you sure you wish to continue? (y/n): ", numFiles)
 	var response string
-	fmt.Scanln(&response)
+	_, err := fmt.Scanln(&response)
+	if err != nil {
+		return false, fmt.Errorf("unable to read user input: %w", err)
+	}
+
 	if strings.ToLower(strings.TrimSpace(response)) != "y" {
 		return false, nil
 	}
@@ -475,7 +493,9 @@ func readInputFile(inputFileName string, bufferText bool) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("unable to open input file: %w", err)
 	}
-	defer inputFile.Close()
+	defer func() {
+		_ = inputFile.Close()
+	}()
 
 	chunks, err := readFileData(inputFile, bufferText)
 	if err != nil {
