@@ -1,5 +1,23 @@
 # TTS CLI Tool
 
+## Triggering a Release Build
+
+To create a new release with compiled binaries for Windows and Linux:
+
+```bash
+# Create and push a new version tag
+git tag v1.x.x
+git push origin v1.x.x
+```
+
+This will automatically trigger the GitHub Actions workflow which will:
+
+1. Build binaries for Windows (amd64) and Linux (amd64)
+2. Create a new GitHub release
+3. Upload the compiled binaries as release assets
+
+**Note:** Do not create releases manually through the GitHub UI, as this will conflict with the automated workflow.
+
 ## Overview
 
 This project provides a streamlined CLI tool to convert text files, including Markdown, into speech using the OpenAI API. Initially part of a broader CLI tools project, it has now been refined to focus on text-to-speech functionality.
