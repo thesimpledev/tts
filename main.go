@@ -25,7 +25,7 @@ const (
 	default_model  = "tts-1-hd"
 	default_format = "mp3"
 	default_speed  = "1.0"
-	version        = "v1.3.2"
+	version        = "v1.3.3"
 	tool           = "tts"
 	api_max_chars  = 4096
 	api_url        = "https://api.openai.com/v1/audio/speech"
@@ -182,7 +182,8 @@ func splitIntoChunks(text string, chunkSize int) []string {
 		}
 
 		splitIndex := chunkSize
-		for ; splitIndex > 0 && !unicode.IsSpace(inputRunes[splitIndex]); splitIndex-- {
+		for splitIndex > 0 && !unicode.IsSpace(inputRunes[splitIndex]) {
+			splitIndex--
 		}
 		if splitIndex == 0 {
 			splitIndex = chunkSize // If no space found, force split
